@@ -1,15 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Search, Truck, PackageCheck, Clock, RotateCcw, Filter, MapPin, Tag, Edit2, Trash2, X } from "lucide-react"
 import { type OrderStatus, type Order } from "@/lib/data"
 import { OrderStatusBadge } from "@/components/app/status-badge"
 import { OrderForm } from "@/components/app/order-form"
 import { Modal } from "@/components/app/modal"
 import { useApp } from "@/lib/app-state"
-import { IRAQ_GOVERNORATES } from "@/lib/iraq"
-import { formatPrice } from "@/lib/utils"
-import { cn } from "@/lib/utils"
+import { IRAQ_GOVERNORATES, formatIQD } from "@/lib/iraq"
+import { formatPrice, cn } from "@/lib/utils"
 
 const orderStatuses: OrderStatus[] = [
   "قيد التجهيز",
@@ -19,6 +18,20 @@ const orderStatuses: OrderStatus[] = [
   "مسترجع",
   "ملغي",
 ]
+
+// دالة تقييس النصوص العربية للبحث بمرونة وتجاهل الهمزات والتشكيل
+function normalizeArabic(input: string): string {
+  if (!input) return ""
+  return input
+    .normalize("NFKD")
+    .replace(/[\u064B-\u065F\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .trim()
+    .toLowerCase()
+}
 
 export function OrdersView({ onCreate }: { onCreate?: boolean }) {
   // جلب العملة والبيانات من السياق المركزي
@@ -47,25 +60,45 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
     return () => window.removeEventListener("filter-orders", handleFilterOrder as EventListener)
   }, [])
 
-  const summary = [
+  // حساب أرقام الملخصات ديناميكياً مع التخزين التلقائي
+  const summary = useMemo(() => [
     { label: "قيد التجهيز", value: orders.filter((o) => o.status === "قيد التجهيز").length, icon: Clock, tint: "text-warning bg-warning/15" },
     { label: "قيد الشحن", value: orders.filter((o) => o.status === "تم الشحن").length, icon: Truck, tint: "text-primary bg-primary/15" },
     { label: "تم التوصيل", value: orders.filter((o) => o.status === "تم التوصيل").length, icon: PackageCheck, tint: "text-success bg-success/15" },
     { label: "مرتجعات", value: orders.filter((o) => o.status === "مسترجع").length, icon: RotateCcw, tint: "text-destructive bg-destructive/15" },
-  ]
+  ], [orders])
 
-  const filteredOrders = orders.filter((o) => {
-    const matchesGovernorate = selectedGovernorate === "الكل" || o.governorate === selectedGovernorate
-    const matchesStatus = selectedStatus === "الكل" || o.status === selectedStatus
-    const customerStr = o.customer || (o as any).customerName || ""
-    const hay = `${customerStr} ${o.id} ${o.city} ${o.governorate} ${o.phone}`.toLowerCase()
-    const matchesQuery = !query.trim() || hay.includes(query.toLowerCase().trim())
+  // تصفية الطلبات بمرونة عربية وتجنب استخدام any
+  const filteredOrders = useMemo(() => {
+    const cleanQ = normalizeArabic(query)
 
-    return matchesGovernorate && matchesStatus && matchesQuery
-  })
+    return orders.filter((o) => {
+      const matchesGovernorate = selectedGovernorate === "الكل" || o.governorate === selectedGovernorate
+      const matchesStatus = selectedStatus === "الكل" || o.status === selectedStatus
+      
+      if (!cleanQ) return matchesGovernorate && matchesStatus
 
-  // حساب إجمالي المبلغ المصفى مع دعم العملة
-  const filteredTotalAmount = filteredOrders.reduce((sum, order) => sum + (order.amount || (order as any).totalAmount || 0), 0)
+      const customerStr = normalizeArabic(o.customer || "")
+      const idStr = normalizeArabic(o.id || "")
+      const cityStr = normalizeArabic(o.city || "")
+      const govStr = normalizeArabic(o.governorate || "")
+      const phoneStr = normalizeArabic(o.phone || "")
+
+      const matchesQuery = 
+        customerStr.includes(cleanQ) ||
+        idStr.includes(cleanQ) ||
+        cityStr.includes(cleanQ) ||
+        govStr.includes(cleanQ) ||
+        phoneStr.includes(cleanQ)
+
+      return matchesGovernorate && matchesStatus && matchesQuery
+    })
+  }, [orders, selectedGovernorate, selectedStatus, query])
+
+  // حساب إجمالي المبلغ المصفى
+  const filteredTotalAmount = useMemo(() => {
+    return filteredOrders.reduce((sum, order) => sum + (order.amount || 0), 0)
+  }, [filteredOrders])
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -214,7 +247,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
             عرض <span className="font-semibold text-foreground">{filteredOrders.length}</span> من أصل <span className="font-semibold text-foreground">{orders.length}</span> طلب
           </div>
           <div className="font-medium text-foreground">
-            إجمالي مبيعات النتائج: <span className="text-primary font-bold">{formatPrice(filteredTotalAmount, currency)}</span>
+            إجمالي مبيعات النتائج: <span className="text-primary font-bold">{currency === "IQD" ? formatIQD(filteredTotalAmount) : formatPrice(filteredTotalAmount, currency)}</span>
           </div>
         </div>
       </div>
@@ -237,8 +270,8 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
             </thead>
             <tbody>
               {filteredOrders.map((o) => {
-                const customerName = o.customer || (o as any).customerName || "زبون"
-                const amountVal = o.amount || (o as any).totalAmount || 0
+                const customerName = o.customer || "زبون"
+                const amountVal = o.amount || 0
                 return (
                   <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/40">
                     <td className="whitespace-nowrap px-5 py-3.5 font-medium">{o.id}</td>
@@ -258,7 +291,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                       {o.street ? ` — ${o.street}` : ""}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3.5 font-semibold text-foreground">
-                      {formatPrice(amountVal, currency)}
+                      {currency === "IQD" ? formatIQD(amountVal) : formatPrice(amountVal, currency)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3.5">
                       <div className="flex items-center gap-2">

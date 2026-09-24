@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import {
   Bot,
   User,
@@ -39,7 +39,7 @@ import { Modal } from "@/components/app/modal"
 import { useApp } from "@/lib/app-state"
 import { cn } from "@/lib/utils"
 
-// 🇮🇶 قائمة المحافظات العراقية كاملة
+// قائمة المحافظات العراقية كاملة
 const IRAQ_GOVERNORATES = [
   "بغداد",
   "البصرة",
@@ -61,6 +61,20 @@ const IRAQ_GOVERNORATES = [
   "كركوك",
 ]
 
+// دالة تقييس النصوص العربية لضمان مرونة البحث
+function normalizeArabic(input: string): string {
+  if (!input) return ""
+  return input
+    .normalize("NFKD")
+    .replace(/[\u064B-\u065F\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .trim()
+    .toLowerCase()
+}
+
 interface CustomerProfile {
   completedOrders: number
   returnedOrders: number
@@ -78,7 +92,6 @@ interface Message {
   isTranscribed?: boolean
 }
 
-// 🔔 سجل الأحداث والإشعارات الداخلية
 interface ActivityLogEntry {
   id: string
   chatId: string
@@ -88,15 +101,14 @@ interface ActivityLogEntry {
   kind: "rule" | "urgent" | "resume" | "cancel" | "ai" | "order"
 }
 
-// 🚚 هيكل أسعار الشحن المخصصة مع دعم الاختيار المتعدد بالمصفوفة
 interface DeliveryRates {
-  homeGovName: string      // اسم محافظة المتجر
-  homeGovFee: number       // سعر التوصيل داخل محافظة المتجر
-  baghdadFee: number       // سعر التوصيل إلى بغداد
-  nearGovs: string[]       // 🎯 مصفوفة أسماء المحافظات القريبة المحددة بالنقر
-  nearGovsFee: number      // سعر التوصيل للمحافظات القريبة
-  farGovsFee: number       // سعر التوصيل للمحافظات البعيدة
-  remoteFee: number        // سعر التوصيل للأطراف والنواحي
+  homeGovName: string
+  homeGovFee: number
+  baghdadFee: number
+  nearGovs: string[]
+  nearGovsFee: number
+  farGovsFee: number
+  remoteFee: number
 }
 
 interface ChatSession {
@@ -133,16 +145,16 @@ export function ChatbotView() {
   const [aiEnabled, setAiEnabled] = useState(true)
   const [autoResumeMinutes, setAutoResumeMinutes] = useState(10)
 
-  // 🆕 1) سجل الأحداث والإشعارات
+  // 1) سجل الأحداث والإشعارات
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
   const [showActivityPanel, setShowActivityPanel] = useState(false)
   const [unreadActivity, setUnreadActivity] = useState(0)
 
-  // 🆕 2) بحث وتصفية المحادثات
+  // 2) بحث وتصفية المحادثات
   const [chatSearchQuery, setChatSearchQuery] = useState("")
   const [chatStatusFilter, setChatStatusFilter] = useState<"ALL" | "BOT_ACTIVE" | "HUMAN_OVERRIDE" | "CANCELLATION_INQUIRY" | "URGENT">("ALL")
 
-  // 🆕 3) اقتراحات ردود سريعة أثناء الرد اليدوي
+  // 3) اقتراحات ردود سريعة أثناء الرد اليدوي
   const QUICK_REPLIES = [
     "أهلاً وسهلاً بيك عيوني 🌸",
     "تدلل، راح نتواصل وياك خلال دقائق",
@@ -151,22 +163,22 @@ export function ChatbotView() {
     "عذراً على التأخير، راح نعوضك 🙏",
   ]
 
-  // 🆕 4) تلخيص المحادثة بالذكاء الاصطناعي
+  // 4) تلخيص المحادثة بالذكاء الاصطناعي
   const [isSummarizing, setIsSummarizing] = useState(false)
   const [summaryText, setSummaryText] = useState<Record<string, string>>({})
 
-  // 🆕 5) كشف الرسائل العاجلة / الشكاوى تلقائياً
+  // 5) كشف الرسائل العاجلة / الشكاوى تلقائياً
   const URGENT_KEYWORDS = [
     "شكوى", "أشتكي", "تهديد", "المحامي", "استرجاع فلوسي", "احتيال",
     "أسوء خدمة", "خراب", "ما يصير هيچي", "زعلان", "غاضب", "نصب", "حرامية",
   ]
 
-  // 🚚 أسعار وشروط الشحن المحددة من التاجر (افتراضياً: بغداد هي المتجر)
+  // أسعار وشروط الشحن المحددة من التاجر
   const [deliveryRates, setDeliveryRates] = useState<DeliveryRates>({
     homeGovName: "بغداد",
     homeGovFee: 4000,
     baghdadFee: 5000,
-    nearGovs: ["ديالى", "بابل", "الأنبار", "واسط", "صلاح الدين"], // تحديد افتراضي
+    nearGovs: ["ديالى", "بابل", "الأنبار", "واسط", "صلاح الدين"],
     nearGovsFee: 7000,
     farGovsFee: 10000,
     remoteFee: 10000,
@@ -179,10 +191,8 @@ export function ChatbotView() {
   const [keywords, setKeywords] = useState("")
   const [reply, setReply] = useState("")
 
-  // فحص هل محافظة المتجر هي بغداد؟
   const isHomeGovBaghdad = deliveryRates.homeGovName === "بغداد"
 
-  // تبديل اختيار المحافظة القريبة بنقرة زر
   const toggleNearGov = (gov: string) => {
     setDeliveryRates((prev) => {
       const exists = prev.nearGovs.includes(gov)
@@ -255,32 +265,34 @@ export function ChatbotView() {
   const [senderType, setSenderType] = useState<"customer" | "merchant">("customer")
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
-  const activeChat = chats.find((c) => c.id === activeChatId) || chats[0]
+  const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) || chats[0], [chats, activeChatId])
 
-  // 🔎 المحادثات بعد تطبيق البحث والتصفية
-  const filteredChats = chats.filter((c) => {
-    const q = chatSearchQuery.trim().toLowerCase()
-    const matchesSearch =
-      q.length === 0 ||
-      c.customerName.toLowerCase().includes(q) ||
-      c.customerHandle.toLowerCase().includes(q) ||
-      c.customerPhone.includes(q)
+  // المحادثات بعد تطبيق البحث المطور بـ normalizeArabic والتصفية
+  const filteredChats = useMemo(() => {
+    const q = normalizeArabic(chatSearchQuery)
+    return chats.filter((c) => {
+      const matchesSearch =
+        q.length === 0 ||
+        normalizeArabic(c.customerName).includes(q) ||
+        normalizeArabic(c.customerHandle).includes(q) ||
+        normalizeArabic(c.customerPhone).includes(q)
 
-    const matchesFilter =
-      chatStatusFilter === "ALL" ||
-      (chatStatusFilter === "URGENT" ? c.isUrgent : c.status === chatStatusFilter)
+      const matchesFilter =
+        chatStatusFilter === "ALL" ||
+        (chatStatusFilter === "URGENT" ? c.isUrgent : c.status === chatStatusFilter)
 
-    return matchesSearch && matchesFilter
-  })
+      return matchesSearch && matchesFilter
+    })
+  }, [chats, chatSearchQuery, chatStatusFilter])
+
   const tokensUsed = merchant?.aiTokensUsed ?? 0
   const tokenLimit = merchant?.aiTokenLimit ?? 500_000
   const isExceeded = tokensUsed >= tokenLimit
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [activeChat.messages])
+  }, [activeChat?.messages])
 
-  // 🔔 إضافة حدث لسجل الأحداث والإشعارات
   const addActivity = (chatId: string, customerName: string, text: string, kind: ActivityLogEntry["kind"]) => {
     setActivityLog((prev) => [
       {
@@ -296,9 +308,6 @@ export function ChatbotView() {
     setUnreadActivity((n) => n + 1)
   }
 
-  // 🔗 ربط الردود الصادرة فعلياً بنظام إرسال الرسائل الحقيقي (واتساب/انستغرام/تيك توك)
-  // هذه الدالة هي نقطة الربط مع الـ backend: أي رد يُنشأ محلياً (بوت/تاجر/قاعدة جاهزة)
-  // يمر عبرها ليُرسل فعلياً للزبون عبر منصة التواصل الخاصة به.
   const dispatchToPlatform = async (chat: ChatSession, text: string) => {
     try {
       await fetch("/api/messages/send", {
@@ -312,14 +321,11 @@ export function ChatbotView() {
         }),
       })
     } catch (err) {
-      // لا نوقف واجهة المحادثة إذا فشل الإرسال الفعلي، لكن نسجّله للمراجعة
       console.error("فشل إرسال الرسالة عبر النظام الخارجي:", err)
       addActivity(chat.id, chat.customerName, "⚠️ تعذر إرسال الرد فعلياً عبر المنصة، تحقق من الاتصال", "urgent")
     }
   }
 
-  // ⏱️ تفعيل "مهلة صمت البوت" فعلياً: استئناف الرد الآلي تلقائياً بعد
-  // انتهاء المدة المحددة من دون رد جديد من التاجر أثناء وضع الرد اليدوي
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now()
@@ -352,29 +358,24 @@ export function ChatbotView() {
     return () => clearInterval(interval)
   }, [autoResumeMinutes])
 
-  // 🚚 حاسبة الشحن الديناميكية بحسب خيارات التاجر المحددة بالنقر
   const calculateDeliveryFee = (text: string): { gov: string; fee: number } => {
     const cleanText = text.toLowerCase()
     const homeGov = deliveryRates.homeGovName.toLowerCase()
 
-    // 1. الأطراف والنواحي والقرى
     if (cleanText.includes("قضاء") || cleanText.includes("قرية") || cleanText.includes("طرف") || cleanText.includes("ناحية")) {
       return { gov: "أطراف نائية / أقضية", fee: deliveryRates.remoteFee }
     }
 
-    // 2. داخل المحافظة الرئيسية للمتجر
     if (cleanText.includes(homeGov)) {
       return { gov: deliveryRates.homeGovName, fee: deliveryRates.homeGovFee }
     }
 
-    // 3. العاصمة بغداد (إذا لم تكن هي محافظة المتجر)
     if (!isHomeGovBaghdad && (cleanText.includes("بغداد") || cleanText.includes("كرادة") || cleanText.includes("منصور") || cleanText.includes("يرموك"))) {
       return { gov: "بغداد", fee: deliveryRates.baghdadFee }
     }
 
-    // 🎯 4. المحافظات القريبة (الفحص المباشر في عناصر المصفوفة المحددة بالنقر)
     const matchedNearGov = deliveryRates.nearGovs.find((g) => {
-      const cleanGov = g.split(" ")[0].toLowerCase() // تنظيف الاسم مثل نينوى من الأقواس
+      const cleanGov = g.split(" ")[0].toLowerCase()
       return cleanText.includes(cleanGov)
     })
 
@@ -382,7 +383,6 @@ export function ChatbotView() {
       return { gov: `محافظة قريبة (${matchedNearGov})`, fee: deliveryRates.nearGovsFee }
     }
 
-    // 5. المحافظات البعيدة (بقية المحافظات غير المحددة)
     return { gov: "محافظات بعيدة", fee: deliveryRates.farGovsFee }
   }
 
@@ -517,7 +517,6 @@ export function ChatbotView() {
     }
   }
 
-  // 🧠 تلخيص المحادثة بالذكاء الاصطناعي بضغطة زر واحدة
   const handleSummarizeChat = async (chat: ChatSession) => {
     if (isSummarizing) return
     setIsSummarizing(true)
@@ -539,11 +538,29 @@ export function ChatbotView() {
       if (!response.ok) throw new Error(data.details || data.error || "تعذر التلخيص")
       incrementAiUsage(400)
       setSummaryText((prev) => ({ ...prev, [chat.id]: data.reply || "تعذر توليد ملخص لهذه المحادثة." }))
-    } catch (err) {
+    } catch {
       setSummaryText((prev) => ({ ...prev, [chat.id]: "⚠️ تعذر الاتصال بخدمة التلخيص، حاول مرة أخرى." }))
     } finally {
       setIsSummarizing(false)
     }
+  }
+
+  // حفظ قاعدة الرد الجاهز في السياق المركزي بشكل فعلي
+  const handleAddRuleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!trigger.trim() || !keywords.trim() || !reply.trim()) return
+
+    addRule({
+      trigger: trigger.trim(),
+      keywords: keywords.trim(),
+      reply: reply.trim(),
+      enabled: true,
+    })
+
+    setTrigger("")
+    setKeywords("")
+    setReply("")
+    setOpenRuleModal(false)
   }
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -584,7 +601,6 @@ export function ChatbotView() {
 
     checkAndParseAddressPassively(msgText, activeChatId)
 
-    // 🚨 كشف الرسائل العاجلة/الشكاوى وتصعيدها فوراً للتاجر
     const isUrgentMsg = URGENT_KEYWORDS.some((kw) => msgText.includes(kw))
     if (isUrgentMsg) {
       addActivity(activeChatId, activeChat.customerName, `رسالة عاجلة تحتاج تدخل: "${msgText.slice(0, 40)}"`, "urgent")
@@ -738,7 +754,7 @@ export function ChatbotView() {
   return (
     <div className="space-y-6 rtl">
       
-      {/* 🎛️ شريط التحكم الرئيسي */}
+      {/* شريط التحكم الرئيسي */}
       <div className="p-4 rounded-2xl border border-border bg-card space-y-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-3">
           <div className="flex items-center gap-3">
@@ -895,12 +911,13 @@ export function ChatbotView() {
                     <button
                       role="switch"
                       aria-checked={r.enabled}
+                      aria-label="تفعيل أو تعطيل القاعدة"
                       onClick={() => toggleRule(r.id)}
                       className={cn("relative h-5 w-9 rounded-full transition-colors", r.enabled ? "bg-primary" : "bg-muted")}
                     >
                       <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", r.enabled ? "right-0.5" : "right-4.5")} />
                     </button>
-                    <button onClick={() => deleteRule(r.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-md">
+                    <button onClick={() => deleteRule(r.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-md" title="حذف القاعدة">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -910,7 +927,7 @@ export function ChatbotView() {
           </ul>
         </section>
 
-        {/* 💬 منطقة إدارة المحادثات الحية */}
+        {/* منطقة إدارة المحادثات الحية */}
         <section className="xl:col-span-7 grid grid-cols-1 md:grid-cols-12 rounded-xl border border-border bg-card shadow-sm overflow-hidden h-155">
           
           <div className="md:col-span-4 border-l border-border flex flex-col bg-muted/20">
@@ -1062,7 +1079,7 @@ export function ChatbotView() {
               </div>
             )}
 
-            {/* 🚚 الوصل مع أجور التوصيل المحسوبة */}
+            {/* الوصل مع أجور التوصيل المحسوبة */}
             {activeChat.extractedOrder && (
               <div className={`m-3 p-3 rounded-xl text-[11px] space-y-1.5 border ${
                 activeChat.extractedOrder.isModified
@@ -1218,249 +1235,245 @@ export function ChatbotView() {
         </section>
       </div>
 
-      {/* 🚚 Modal تخصيص أجور الشحن مع لوحة اختيار المحافظات بالنقر */}
-      <Modal open={openRatesModal} onClose={() => setOpenRatesModal(false)} title="تخصيص أسعار وتصنيف الشحن للمتجر">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setOpenRatesModal(false)
-          }}
-          className="space-y-4 text-xs"
-        >
-          <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-foreground space-y-1">
-            <div className="font-bold text-primary flex items-center gap-1.5">
-              <MapPin className="h-4 w-4 text-primary" />
-              تحديد أسعار الشحن بالنقر المباشر 👆
-            </div>
-            <p className="text-[11px] text-muted-foreground leading-normal">
-              اختر محافظتك المباشرة، ثم اضغط على المحافظات القريبة منك لتحديدها. المحافظات غير المحددة ستُصنّف تلقائياً ضمن المحافظات البعيدة.
-            </p>
-          </div>
-
-          {/* 1️⃣ اختيار محافظة المتجر من قائمة جاهزة */}
-          <div>
-            <label className="block font-semibold mb-1 text-foreground">محافظة متجرك الرئيسية (التي ينطلق منها التوصيل)</label>
-            <select
-              value={deliveryRates.homeGovName}
-              onChange={(e) => {
-                const newHome = e.target.value
-                setDeliveryRates({
-                  ...deliveryRates,
-                  homeGovName: newHome,
-                  nearGovs: deliveryRates.nearGovs.filter((g) => g !== newHome), // إزالة المحافظة الرئيسية من قائمة القريبة
-                })
-              }}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-bold text-foreground cursor-pointer"
-            >
-              {IRAQ_GOVERNORATES.map((gov) => (
-                <option key={gov} value={gov}>
-                  📍 {gov}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 2️⃣ اختيار المحافظات القريبة بالنقر المباشر (Interactive Chips) */}
-          <div className="space-y-2 border border-border/80 p-3 rounded-xl bg-muted/20">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-foreground flex items-center gap-1.5">
-                <span>المحافظات القريبة منك (اضغط للتحديد):</span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-2 py-0.5 rounded-full">
-                  {deliveryRates.nearGovs.length} محافظة قريبة 🟢
-                </span>
-              </label>
+      {/* Modal تخصيص أجور الشحن مع العرض الشرطي */}
+      {openRatesModal ? (
+        <Modal onClose={() => setOpenRatesModal(false)} title="تخصيص أسعار وتصنيف الشحن للمتجر">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              setOpenRatesModal(false)
+            }}
+            className="space-y-4 text-xs"
+          >
+            <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-foreground space-y-1">
+              <div className="font-bold text-primary flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-primary" />
+                تحديد أسعار الشحن بالنقر المباشر 👆
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-normal">
+                اختر محافظتك المباشرة، ثم اضغط على المحافظات القريبة منك لتحديدها. المحافظات غير المحددة ستُصنّف تلقائياً ضمن المحافظات البعيدة.
+              </p>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 pt-1 max-h-36 overflow-y-auto p-1">
-              {IRAQ_GOVERNORATES.filter((g) => g !== deliveryRates.homeGovName).map((gov) => {
-                const isSelected = deliveryRates.nearGovs.includes(gov)
-                return (
-                  <button
-                    key={gov}
-                    type="button"
-                    onClick={() => toggleNearGov(gov)}
-                    className={cn(
-                      "px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border",
-                      isSelected
-                        ? "bg-emerald-600 text-white border-emerald-500 shadow-sm scale-105"
-                        : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-                    )}
-                  >
-                    {isSelected ? <Check className="h-3 w-3 text-white" /> : <Plus className="h-3 w-3 text-muted-foreground" />}
-                    {gov}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              💡 المحافظات المحددة بالأخضر تُحسب بسعر (المحافظات القريبة)، وباقي المحافظات تُحسب بسعر (المحافظات البعيدة).
-            </p>
-          </div>
-
-          {/* 3️⃣ أسعار الشحن المخصصة */}
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            {/* سعر داخل محافظة المتجر */}
             <div>
-              <label className="block font-semibold mb-1 text-foreground">
-                داخل {deliveryRates.homeGovName} (د.ع)
-              </label>
-              <input
-                type="number"
-                required
-                value={deliveryRates.homeGovFee}
-                onChange={(e) => setDeliveryRates({ ...deliveryRates, homeGovFee: Number(e.target.value) })}
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
-              />
+              <label className="block font-semibold mb-1 text-foreground">محافظة متجرك الرئيسية (التي ينطلق منها التوصيل)</label>
+              <select
+                value={deliveryRates.homeGovName}
+                onChange={(e) => {
+                  const newHome = e.target.value
+                  setDeliveryRates({
+                    ...deliveryRates,
+                    homeGovName: newHome,
+                    nearGovs: deliveryRates.nearGovs.filter((g) => g !== newHome),
+                  })
+                }}
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-bold text-foreground cursor-pointer"
+              >
+                {IRAQ_GOVERNORATES.map((gov) => (
+                  <option key={gov} value={gov}>
+                    📍 {gov}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* سعر العاصمة بغداد (يتعطل تلقائياً إذا كانت محافظة المتجر بغداد) */}
-            <div>
-              <label className="font-semibold mb-1 text-foreground flex items-center justify-between">
-                <span>إلى العاصمة بغداد (د.ع)</span>
-                {isHomeGovBaghdad && <span className="text-[9px] text-amber-500 font-bold">(هي المحافظة الرئيسية)</span>}
-              </label>
-              <div className="relative">
+            <div className="space-y-2 border border-border/80 p-3 rounded-xl bg-muted/20">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-foreground flex items-center gap-1.5">
+                  <span>المحافظات القريبة منك (اضغط للتحديد):</span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-2 py-0.5 rounded-full">
+                    {deliveryRates.nearGovs.length} محافظة قريبة 🟢
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 pt-1 max-h-36 overflow-y-auto p-1">
+                {IRAQ_GOVERNORATES.filter((g) => g !== deliveryRates.homeGovName).map((gov) => {
+                  const isSelected = deliveryRates.nearGovs.includes(gov)
+                  return (
+                    <button
+                      key={gov}
+                      type="button"
+                      onClick={() => toggleNearGov(gov)}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border",
+                        isSelected
+                          ? "bg-emerald-600 text-white border-emerald-500 shadow-sm scale-105"
+                          : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                      )}
+                    >
+                      {isSelected ? <Check className="h-3 w-3 text-white" /> : <Plus className="h-3 w-3 text-muted-foreground" />}
+                      {gov}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                💡 المحافظات المحددة بالأخضر تُحسب بسعر (المحافظات القريبة)، وباقي المحافظات تُحسب بسعر (المحافظات البعيدة).
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block font-semibold mb-1 text-foreground">
+                  داخل {deliveryRates.homeGovName} (د.ع)
+                </label>
                 <input
                   type="number"
-                  disabled={isHomeGovBaghdad}
-                  value={isHomeGovBaghdad ? deliveryRates.homeGovFee : deliveryRates.baghdadFee}
-                  onChange={(e) => setDeliveryRates({ ...deliveryRates, baghdadFee: Number(e.target.value) })}
-                  className={cn(
-                    "h-10 w-full rounded-lg border border-border px-3 text-xs outline-none font-mono font-bold transition-all",
-                    isHomeGovBaghdad
-                      ? "bg-muted/60 text-muted-foreground cursor-not-allowed border-dashed opacity-60"
-                      : "bg-background focus:border-primary text-foreground"
-                  )}
+                  required
+                  value={deliveryRates.homeGovFee}
+                  onChange={(e) => setDeliveryRates({ ...deliveryRates, homeGovFee: Number(e.target.value) })}
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
                 />
-                {isHomeGovBaghdad && (
-                  <Ban className="h-4 w-4 text-muted-foreground absolute left-3 top-3 opacity-60" />
-                )}
+              </div>
+
+              <div>
+                <label className="font-semibold mb-1 text-foreground flex items-center justify-between">
+                  <span>إلى العاصمة بغداد (د.ع)</span>
+                  {isHomeGovBaghdad && <span className="text-[9px] text-amber-500 font-bold">(هي المحافظة الرئيسية)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    disabled={isHomeGovBaghdad}
+                    value={isHomeGovBaghdad ? deliveryRates.homeGovFee : deliveryRates.baghdadFee}
+                    onChange={(e) => setDeliveryRates({ ...deliveryRates, baghdadFee: Number(e.target.value) })}
+                    className={cn(
+                      "h-10 w-full rounded-lg border border-border px-3 text-xs outline-none font-mono font-bold transition-all",
+                      isHomeGovBaghdad
+                        ? "bg-muted/60 text-muted-foreground cursor-not-allowed border-dashed opacity-60"
+                        : "bg-background focus:border-primary text-foreground"
+                    )}
+                  />
+                  {isHomeGovBaghdad && (
+                    <Ban className="h-4 w-4 text-muted-foreground absolute left-3 top-3 opacity-60" />
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-foreground">
+                  المحافظات القريبة (د.ع)
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={deliveryRates.nearGovsFee}
+                  onChange={(e) => setDeliveryRates({ ...deliveryRates, nearGovsFee: Number(e.target.value) })}
+                  placeholder="7000"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold text-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-foreground">
+                  المحافظات البعيدة (المتبقية) (د.ع)
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={deliveryRates.farGovsFee}
+                  onChange={(e) => setDeliveryRates({ ...deliveryRates, farGovsFee: Number(e.target.value) })}
+                  placeholder="10000"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="block font-semibold mb-1 text-foreground">
+                  الأطراف والنواحي والقرى النائية (د.ع)
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={deliveryRates.remoteFee}
+                  onChange={(e) => setDeliveryRates({ ...deliveryRates, remoteFee: Number(e.target.value) })}
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
+                />
               </div>
             </div>
 
-            {/* سعر المحافظات القريبة */}
-            <div>
-              <label className="block font-semibold mb-1 text-foreground">
-                المحافظات القريبة (د.ع)
-              </label>
-              <input
-                type="number"
-                required
-                value={deliveryRates.nearGovsFee}
-                onChange={(e) => setDeliveryRates({ ...deliveryRates, nearGovsFee: Number(e.target.value) })}
-                placeholder="7000"
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold text-emerald-400"
-              />
-            </div>
-
-            {/* سعر المحافظات البعيدة */}
-            <div>
-              <label className="block font-semibold mb-1 text-foreground">
-                المحافظات البعيدة (المتبقية) (د.ع)
-              </label>
-              <input
-                type="number"
-                required
-                value={deliveryRates.farGovsFee}
-                onChange={(e) => setDeliveryRates({ ...deliveryRates, farGovsFee: Number(e.target.value) })}
-                placeholder="10000"
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
-              />
-            </div>
-
-            {/* سعر الأطراف والنواحي */}
-            <div className="col-span-2">
-              <label className="block font-semibold mb-1 text-foreground">
-                الأطراف والنواحي والقرى النائية (د.ع)
-              </label>
-              <input
-                type="number"
-                required
-                value={deliveryRates.remoteFee}
-                onChange={(e) => setDeliveryRates({ ...deliveryRates, remoteFee: Number(e.target.value) })}
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-3">
-            <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-bold text-primary-foreground hover:opacity-90">
-              حفظ الأسعار والتصنيفات وتطبيقها فوراً 🚚
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpenRatesModal(false)}
-              className="h-10 rounded-lg border border-border px-4 font-medium"
-            >
-              إلغاء
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal إضافة كلمة مفتاحية */}
-      <Modal open={openRuleModal} onClose={() => setOpenRuleModal(false)} title="إضافة كلمة مفتاحية ورّد جاهز">
-        <div className="space-y-4 text-xs">
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 space-y-1.5 leading-relaxed">
-            <div className="flex items-center gap-2 font-bold text-amber-400">
-              <Lightbulb className="h-4 w-4 shrink-0" />
-              لماذا ينصح بإنشاء كلمات مفتاحية وردود جاهزة؟
-            </div>
-            <p className="text-[11px] text-muted-foreground leading-normal">
-              إنشاء ردود جاهزة للأسئلة المكررة يضمن لزبائنك **رداً فورياً مجانياً (0 توكنز)** دون الحاجة لاستدعاء الذكاء الاصطناعي، مما **يحمي باقة التوكنات لديك من النفاد**!
-            </p>
-          </div>
-
-          <form onSubmit={(e) => { e.preventDefault(); setOpenRuleModal(false); }} className="space-y-3">
-            <div>
-              <label className="block font-semibold mb-1">عنوان القاعدة</label>
-              <input
-                required
-                value={trigger}
-                onChange={(e) => setTrigger(e.target.value)}
-                placeholder="مثال: عنوان المحل"
-                className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold mb-1">الكلمات المفتاحية (افصل بينها بفاصلة)</label>
-              <input
-                required
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="مثال: موقعكم، وين المحل، الفرع، العنوان"
-                className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold mb-1">الرد التلقائي الجاهز (0 توكنز)</label>
-              <textarea
-                required
-                rows={3}
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                placeholder="أهلاً بك عيوني! موقعنا في بغداد..."
-                className="w-full rounded-lg border border-border bg-muted/20 p-3 text-xs outline-none focus:border-ring"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-semibold text-primary-foreground hover:opacity-90">
-                حفظ القاعدة وتوفير التوكنز ⚡
+            <div className="flex gap-2 pt-3">
+              <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-bold text-primary-foreground hover:opacity-90">
+                حفظ الأسعار والتصنيفات وتطبيقها فوراً 🚚
               </button>
               <button
                 type="button"
-                onClick={() => setOpenRuleModal(false)}
+                onClick={() => setOpenRatesModal(false)}
                 className="h-10 rounded-lg border border-border px-4 font-medium"
               >
                 إلغاء
               </button>
             </div>
           </form>
-        </div>
-      </Modal>
+        </Modal>
+      ) : null}
+
+      {/* Modal إضافة كلمة مفتاحية مع الحفظ التلقائي في حالة التطبيق */}
+      {openRuleModal ? (
+        <Modal onClose={() => setOpenRuleModal(false)} title="إضافة كلمة مفتاحية ورّد جاهز">
+          <div className="space-y-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 space-y-1.5 leading-relaxed">
+              <div className="flex items-center gap-2 font-bold text-amber-400">
+                <Lightbulb className="h-4 w-4 shrink-0" />
+                لماذا ينصح بإنشاء كلمات مفتاحية وردود جاهزة؟
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-normal">
+                إنشاء ردود جاهزة للأسئلة المكررة يضمن لزبائنك **رداً فورياً مجانياً (0 توكنز)** دون الحاجة لاستدعاء الذكاء الاصطناعي، مما **يحمي باقة التوكنات لديك من النفاد**!
+              </p>
+            </div>
+
+            <form onSubmit={handleAddRuleSubmit} className="space-y-3">
+              <div>
+                <label className="block font-semibold mb-1">عنوان القاعدة</label>
+                <input
+                  required
+                  value={trigger}
+                  onChange={(e) => setTrigger(e.target.value)}
+                  placeholder="مثال: عنوان المحل"
+                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">الكلمات المفتاحية (افصل بينها بفاصلة)</label>
+                <input
+                  required
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  placeholder="مثال: موقعكم، وين المحل، الفرع، العنوان"
+                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">الرد التلقائي الجاهز (0 توكنز)</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="أهلاً بك عيوني! موقعنا في بغداد..."
+                  className="w-full rounded-lg border border-border bg-muted/20 p-3 text-xs outline-none focus:border-ring"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-semibold text-primary-foreground hover:opacity-90">
+                  حفظ القاعدة وتوفير التوكنز ⚡
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenRuleModal(false)}
+                  className="h-10 rounded-lg border border-border px-4 font-medium"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   )
 }

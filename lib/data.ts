@@ -1,17 +1,19 @@
 import { formatIQD } from "@/lib/iraq"
 
 export type Stat = {
+  id?: string
   label: string
   value: string
   delta: number
   hint: string
+  lowerIsBetter?: boolean // خاصية أساسية لتحديد الاتجاه الصحيح للمؤشر
 }
 
 export const overviewStats: Stat[] = [
-  { label: "إجمالي المبيعات", value: formatIQD(0), delta: 0, hint: "مقارنة بالشهر الماضي" },
-  { label: "الطلبات الجديدة", value: "٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
-  { label: "ردود تلقائية مُرسلة", value: "٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
-  { label: "معدل التحويل", value: "٪٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
+  { id: "s1", label: "إجمالي المبيعات", value: formatIQD(0), delta: 0, hint: "مقارنة بالشهر الماضي" },
+  { id: "s2", label: "الطلبات الجديدة", value: "٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
+  { id: "s3", label: "ردود تلقائية مُرسلة", value: "٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
+  { id: "s4", label: "معدل التحويل", value: "٪٠", delta: 0, hint: "مقارنة بالشهر الماضي" },
 ]
 
 export type ChartPoint = { month: string; current: number; previous: number }
@@ -60,19 +62,21 @@ export type Order = {
 
 export const seedOrders: Order[] = []
 
+export type ProductStatus = "منشور" | "مسودة" | "نافد"
+
 export type Product = {
   id: string
   name: string
   category: string
   price: number
   stock: number
+  reorderPoint: number // حد التنبيه بالمخزون المنخفض المخصص لكل منتج
   sold: number
-  status: "منشور" | "مسودة" | "نافد"
+  status: ProductStatus
   accent: string
   image?: string
 }
 
-// تزويد المنتجات ببيانات أولية ليتغذى عليها الذكاء الاصطناعي (RAG)
 export const seedProducts: Product[] = [
   {
     id: "p1",
@@ -80,6 +84,7 @@ export const seedProducts: Product[] = [
     category: "إلكترونيات",
     price: 45000,
     stock: 25,
+    reorderPoint: 10,
     sold: 140,
     status: "منشور",
     accent: "blue",
@@ -90,6 +95,7 @@ export const seedProducts: Product[] = [
     category: "إلكترونيات",
     price: 35000,
     stock: 40,
+    reorderPoint: 15,
     sold: 210,
     status: "منشور",
     accent: "purple",
@@ -100,6 +106,7 @@ export const seedProducts: Product[] = [
     category: "حقائب وموضة",
     price: 28000,
     stock: 12,
+    reorderPoint: 5,
     sold: 85,
     status: "منشور",
     accent: "emerald",
@@ -110,6 +117,7 @@ export const seedProducts: Product[] = [
     category: "إلكترونيات",
     price: 18000,
     stock: 50,
+    reorderPoint: 20,
     sold: 320,
     status: "منشور",
     accent: "amber",
@@ -124,7 +132,7 @@ export const topProducts: TopProduct[] = [
   { name: "ساعة Ultra الذكية", sales: formatIQD(6300000), share: 30, accent: "blue" },
 ]
 
-export type Activity = { who: string; action: string; when: string; channel?: Channel }
+export type Activity = { id?: string; who: string; action: string; when: string; channel?: Channel }
 
 export const activity: Activity[] = []
 
@@ -143,15 +151,15 @@ export const seedReplyRules: ReplyRule[] = [
   { id: "r3", trigger: "توفر المنتج", keywords: "متوفر، موجود، المقاسات، الكمية", reply: "نعم! المنتجات المعروضة متوفرة حالياً ويمكنك طلبها فوراً.", hits: 0, enabled: true },
 ]
 
-export type ChatMessage = { from: "customer" | "bot"; text: string; time: string }
+export type ChatMessage = { id?: string; from: "customer" | "bot"; text: string; time: string }
 
 export const conversation: ChatMessage[] = []
 
 export const chatbotStats: Stat[] = [
-  { label: "رسائل تمت معالجتها", value: "٠", delta: 0, hint: "هذا الشهر" },
-  { label: "نسبة الرد الآلي", value: "٪٠", delta: 0, hint: "من إجمالي الرسائل" },
-  { label: "متوسط زمن الرد", value: "٠ ثوانٍ", delta: 0, hint: "أسرع من السابق" },
-  { label: "محادثات نشطة", value: "٠", delta: 0, hint: "خلال ٢٤ ساعة" },
+  { id: "cs1", label: "رسائل تمت معالجتها", value: "٠", delta: 0, hint: "هذا الشهر" },
+  { id: "cs2", label: "نسبة الرد الآلي", value: "٪٠", delta: 0, hint: "من إجمالي الرسائل" },
+  { id: "cs3", label: "متوسط زمن الرد", value: "٠ ثوانٍ", delta: -15, hint: "أسرع من السابق", lowerIsBetter: true }, // تفعيل lowerIsBetter للمؤشرات العكسية
+  { id: "cs4", label: "محادثات نشطة", value: "٠", delta: 0, hint: "خلال ٢٤ ساعة" },
 ]
 
 export type Invoice = {
@@ -217,13 +225,14 @@ export const plans: PlanType[] = [
   },
 ]
 
-/**
- * دالة مساعدة لاستخراج كتالوج المنتجات والقواعد وتغذية الذكاء الاصطناعي بها تلقائياً (RAG Context)
- */
 export function getStoreKnowledgeContext(): string {
   const productsList = seedProducts
     .filter((p) => p.status === "منشور")
-    .map((p) => `- اسم المنتج: ${p.name} | السعر: ${formatIQD(p.price)} | الحالة: ${p.stock > 0 ? "متوفر" : "نافد"} (المخزون: ${p.stock})`)
+    .map((p) => {
+      const isLowStock = p.stock > 0 && p.stock <= p.reorderPoint
+      const stockStatus = p.stock === 0 ? "نافد" : isLowStock ? `منخفض جداً (${p.stock})` : `متوفر (${p.stock})`
+      return `- اسم المنتج: ${p.name} | السعر: ${formatIQD(p.price)} | التصنيف: ${p.category} | حالة المخزون: ${stockStatus}`
+    })
     .join("\n")
 
   const rulesList = seedReplyRules

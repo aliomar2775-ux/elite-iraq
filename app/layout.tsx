@@ -14,7 +14,6 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: 'إيليت العراق — منصة التجارة الاجتماعية',
   description: 'أدر متجرك العراقي على إنستغرام وتيك توك وواتساب بالدينار العراقي: المنتجات، الطلبات، الشحن، وربط المتاجر من مكان واحد.',
-  generator: 'v0.app',
 }
 
 export const viewport: Viewport = {
@@ -31,8 +30,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={cairo.variable}>
-      <body className="antialiased">
+    <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
+      <body className={`${cairo.className} antialiased`}>
         <AppProvider>
           <AuthGate>
             {children}

@@ -2,8 +2,27 @@ export const CURRENCY_CODE = "IQD"
 export const CURRENCY_SYMBOL = "د.ع"
 export const COUNTRY_NAME = "العراق"
 
-export function formatIQD(amount: number) {
-  return `${amount.toLocaleString("ar-IQ")} ${CURRENCY_SYMBOL}`
+// أسعار الشحن الافتراضية داخل العراق (بالدينار العراقي)
+export const SHIPPING_RATES = {
+  BAGHDAD: 5000,
+  OTHER_GOVERNORATES: 8000,
+} as const
+
+/**
+ * تنسيق المبالغ المالية بالدينار العراقي مع حماية ضد القيم غير الصالحة
+ */
+export function formatIQD(amount: number): string {
+  const safeAmount = Number.isFinite(amount) ? amount : 0
+  return `${safeAmount.toLocaleString("ar-IQ")} ${CURRENCY_SYMBOL}`
+}
+
+/**
+ * حساب تكلفة الشحن تلقائياً بناءً على المحافظة
+ */
+export function calculateShippingCost(governorateName: string): number {
+  if (!governorateName) return SHIPPING_RATES.OTHER_GOVERNORATES
+  const isBaghdad = governorateName.trim().includes("بغداد")
+  return isBaghdad ? SHIPPING_RATES.BAGHDAD : SHIPPING_RATES.OTHER_GOVERNORATES
 }
 
 export type Governorate = {
@@ -33,8 +52,12 @@ export const IRAQ_GOVERNORATES: Governorate[] = [
   { id: "maysan", name: "ميسان", cities: ["العمارة", "المجر الكبير", "علي الغربي"] },
 ]
 
-export function getGovernorate(name: string) {
-  return IRAQ_GOVERNORATES.find((g) => g.name === name)
+export function getGovernorate(nameOrId: string) {
+  if (!nameOrId) return undefined
+  const query = nameOrId.trim().toLowerCase()
+  return IRAQ_GOVERNORATES.find(
+    (g) => g.name === nameOrId.trim() || g.id.toLowerCase() === query
+  )
 }
 
 export type Address = {
@@ -54,7 +77,8 @@ export const emptyAddress = (): Address => ({
 })
 
 export function formatAddress(address: Address) {
-  return [address.street, address.district, address.city, address.governorate, COUNTRY_NAME]
+  if (!address) return ""
+  return [address.details, address.street, address.district, address.city, address.governorate, COUNTRY_NAME]
     .filter(Boolean)
     .join("، ")
 }

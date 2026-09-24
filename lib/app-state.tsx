@@ -140,7 +140,7 @@ type AppState = {
   currency: string
   theme: string
   
-  // 🚀 حالة التنقل والبحث المركزي المضافة
+  // حالة التنقل والبحث المركزي
   activeTab: string
   setActiveTab: (tab: string) => void
   globalSearchQuery: string
@@ -274,7 +274,12 @@ function loadSessionId(): string | null {
 }
 
 function persist(users: PersistedUser[], sessionId: string | null) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ users, sessionId }))
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ users, sessionId }))
+  } catch {
+    // يتجاهل الأخطاء إذا كانت مساحة التخزين ممتلئة أو غير متاحة
+  }
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -282,7 +287,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
-  // 🎯 حالة التنقل والبحث المركزية
+  // حالة التنقل والبحث المركزية
   const [activeTab, setActiveTab] = useState<string>("dashboard")
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>("")
 
@@ -335,7 +340,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [commit, current, sessionId, users]
   )
 
-  // 🎯 دالة التنقل المباشرة والموحدة
   const navigateTo = useCallback((tab: string, searchQuery: string = "") => {
     setActiveTab(tab)
     setGlobalSearchQuery(searchQuery)
@@ -440,8 +444,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const clean = phone.replace(/\D/g, "")
     if (!/^(0)?(77|78|79|75)\d{8}$/.test(clean)) return "يرجى كتابة رقم هاتف عراقي صحيح"
     if (typeof window !== "undefined") {
-      sessionStorage.setItem("elite-otp-phone", clean)
-      sessionStorage.setItem("elite-otp-code", LOCAL_OTP)
+      try {
+        sessionStorage.setItem("elite-otp-phone", clean)
+        sessionStorage.setItem("elite-otp-code", LOCAL_OTP)
+      } catch {
+        // حماية عند التصفح الخفي
+      }
     }
     return null
   }, [])
@@ -449,8 +457,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loginWithPhone = useCallback(
     async (phone: string, otp: string) => {
       const clean = phone.replace(/\D/g, "")
-      const expected = typeof window !== "undefined" ? sessionStorage.getItem("elite-otp-code") : LOCAL_OTP
-      if (otp.trim() !== (expected || LOCAL_OTP)) return "رمز التحقق غير صحيح. الرمز التجريبي: 123456"
+      let expected = LOCAL_OTP
+      if (typeof window !== "undefined") {
+        try {
+          expected = sessionStorage.getItem("elite-otp-code") || LOCAL_OTP
+        } catch {
+          expected = LOCAL_OTP
+        }
+      }
+      if (otp.trim() !== expected) return "رمز التحقق غير صحيح. الرمز التجريبي: 123456"
       const email = `${clean}@phone.elite.iq`
       const found = users.find((u) => u.email === email || u.merchant.phone.replace(/\D/g, "") === clean)
       if (found) {
@@ -622,6 +637,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         products: [
           {
             ...product,
+            reorderPoint: product.reorderPoint ?? 10, // تعيين قيمة افتراضية لنقطة طلب المخزون إذا لم تحدد
             id: uid("p"),
             sold: 0,
             accent: accents[u.products.length % accents.length],
@@ -789,7 +805,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currency: current?.currency ?? currency,
       theme: current?.theme ?? theme,
       
-      // 🚀 القيم والتوابع الجديدة للمناقلة
       activeTab,
       setActiveTab,
       globalSearchQuery,
@@ -831,47 +846,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearNotifications,
     }),
     [
+      ready,
+      current,
+      language,
+      currency,
+      theme,
       activeTab,
       globalSearchQuery,
+      setActiveTab,
+      setGlobalSearchQuery,
       navigateTo,
-      addOrder,
-      addCoupon,
-      applyCoupon,
+      setLanguage,
+      setCurrency,
+      setTheme,
+      login,
       loginWithPhone,
       sendLocalOtp,
+      register,
+      logout,
+      completeOnboarding,
+      updateMerchant,
+      upgradePlan,
+      incrementAiUsage,
+      connectChannel,
+      disconnectChannel,
+      addOrder,
+      updateOrderStatus,
+      updateOrder,
+      deleteOrder,
+      addProduct,
+      updateProduct,
+      deleteProduct,
+      addRule,
+      toggleRule,
+      deleteRule,
+      incrementRuleHits,
+      addCoupon,
+      toggleCoupon,
+      deleteCoupon,
+      applyCoupon,
       pushNotification,
       markNotificationRead,
       markAllNotificationsRead,
       clearNotifications,
-      toggleCoupon,
-      deleteCoupon,
-      addProduct,
-      addRule,
-      completeOnboarding,
-      connectChannel,
-      currency,
-      current,
-      deleteOrder,
-      deleteProduct,
-      deleteRule,
-      disconnectChannel,
-      incrementAiUsage,
-      incrementRuleHits,
-      language,
-      login,
-      logout,
-      ready,
-      register,
-      setCurrency,
-      setLanguage,
-      setTheme,
-      theme,
-      toggleRule,
-      updateMerchant,
-      updateOrder,
-      updateOrderStatus,
-      updateProduct,
-      upgradePlan,
     ]
   )
 

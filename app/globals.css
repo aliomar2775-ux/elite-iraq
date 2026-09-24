@@ -2,7 +2,7 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
@@ -50,18 +50,18 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* الوضع الفاتح (النهاري المعتمد على اللون الزهري الجميل والهادئ) */
+/* الوضع الفاتح */
 :root {
   color-scheme: light;
-  --background: oklch(0.982 0.006 350);       /* خلفية زهري فاتح جداً وناعم مريح للعين */
-  --foreground: oklch(0.22 0.04 350);        /* نصوص بلون وردي داكن أنيق وواضح */
-  --card: oklch(1 0 0);                      /* كروت بيضاء نقية تبرز بوضوح فوق الخلفية الزهرية */
+  --background: oklch(0.982 0.006 350);
+  --foreground: oklch(0.22 0.04 350);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.04 350);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.04 350);
-  --primary: oklch(0.62 0.22 350);           /* لون زهري/وردى جذاب وأنيق للأزرار والعناصر الرئيسية */
+  --primary: oklch(0.62 0.22 350);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.94 0.03 350);         /* تدرج زهري خفيف وفاتح للخلفيات الثانوية */
+  --secondary: oklch(0.94 0.03 350);
   --secondary-foreground: oklch(0.35 0.1 350);
   --muted: oklch(0.95 0.015 350);
   --muted-foreground: oklch(0.52 0.06 350);
@@ -72,7 +72,7 @@
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.75 0.15 75);
   --warning-foreground: oklch(0.24 0.03 75);
-  --border: oklch(0.9 0.03 350 / 50%);       /* حدود بنكهة زهرية ناعمة */
+  --border: oklch(0.9 0.03 350 / 50%);
   --input: oklch(0.92 0.02 350 / 40%);
   --ring: oklch(0.62 0.22 350);
   --chart-1: oklch(0.62 0.22 350);
@@ -81,7 +81,7 @@
   --chart-4: oklch(0.76 0.15 70);
   --chart-5: oklch(0.6 0.16 250);
   --radius: 0.75rem;
-  --sidebar: oklch(0.97 0.01 350);           /* قائمة جانبية متناسقة مع التموضع الزهري */
+  --sidebar: oklch(0.97 0.01 350);
   --sidebar-foreground: oklch(0.22 0.04 350);
   --sidebar-primary: oklch(0.62 0.22 350);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -91,7 +91,7 @@
   --sidebar-ring: oklch(0.62 0.22 350);
 }
 
-/* الوضع الداكن (كما هو تماماً دون أي تغيير) */
+/* الوضع الداكن */
 .dark {
   color-scheme: dark;
   --background: oklch(0.16 0.012 285);
@@ -132,10 +132,15 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

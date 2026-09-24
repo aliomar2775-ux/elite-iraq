@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { Search, Package, PackageCheck, PackageX, Layers, MoreVertical, Edit, Trash2, X } from "lucide-react"
 import { useApp } from "@/lib/app-state"
 import { type Product } from "@/lib/data"
@@ -10,6 +10,20 @@ import { Modal } from "@/components/app/modal"
 import { ProductForm } from "@/components/app/product-form"
 
 const filters = ["الكل", "منشور", "مسودة", "نافد"] as const
+
+// دالة تقييس النصوص العربية لضمان مرونة البحث والهمزات والأرقام
+function normalizeArabic(input: string): string {
+  if (!input) return ""
+  return input
+    .normalize("NFKD")
+    .replace(/[\u064B-\u065F\u0640]/g, "") // إزالة التشكيل والتطويل
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .trim()
+    .toLowerCase()
+}
 
 export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
   const { products, globalSearchQuery, setGlobalSearchQuery } = useApp()
@@ -48,22 +62,35 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
     }
   }
 
-  const summary = [
-    { label: "إجمالي المنتجات", value: products.length, icon: Layers, tint: "text-chart-1 bg-chart-1/15" },
-    { label: "منتجات منشورة", value: products.filter((p) => p.status === "منشور").length, icon: PackageCheck, tint: "text-success bg-success/15" },
-    { label: "مخزون منخفض", value: products.filter((p) => p.stock > 0 && p.stock <= 12).length, icon: Package, tint: "text-warning bg-warning/15" },
-    { label: "نفد من المخزون", value: products.filter((p) => p.status === "نافد" || p.stock === 0).length, icon: PackageX, tint: "text-destructive bg-destructive/15" },
-  ]
+  // حساب الملخص ديناميكياً مع الاعتماد على reorderPoint المستخرج لكل منتج
+  const summary = useMemo(() => {
+    const total = products.length
+    const published = products.filter((p) => p.status === "منشور").length
+    const lowStock = products.filter((p) => p.stock > 0 && p.stock <= (p.reorderPoint ?? 10)).length
+    const outOfStock = products.filter((p) => p.status === "نافد" || p.stock === 0).length
 
-  // تصفية القائمة بناءً على التبويب وحقل البحث المباشر
-  const list = products.filter((p: any) => {
-    const byFilter = filter === "الكل" || p.status === filter
-    const cleanQ = query.trim().toLowerCase()
-    const nameStr = (p.name || "").toLowerCase()
-    const catStr = (p.category || "").toLowerCase()
-    const byQuery = !cleanQ || nameStr.includes(cleanQ) || catStr.includes(cleanQ)
-    return byFilter && byQuery
-  })
+    return [
+      { label: "إجمالي المنتجات", value: total, icon: Layers, tint: "text-chart-1 bg-chart-1/15" },
+      { label: "منتجات منشورة", value: published, icon: PackageCheck, tint: "text-success bg-success/15" },
+      { label: "مخزون منخفض", value: lowStock, icon: Package, tint: "text-warning bg-warning/15" },
+      { label: "نفد من المخزون", value: outOfStock, icon: PackageX, tint: "text-destructive bg-destructive/15" },
+    ]
+  }, [products])
+
+  // تصفية القائمة بدقة بفضل دالة normalizeArabic وبدون استخدام any
+  const list = useMemo(() => {
+    const cleanQ = normalizeArabic(query)
+    return products.filter((p: Product) => {
+      const byFilter = filter === "الكل" || p.status === filter
+      if (!cleanQ) return byFilter
+
+      const nameStr = normalizeArabic(p.name || "")
+      const catStr = normalizeArabic(p.category || "")
+      const byQuery = nameStr.includes(cleanQ) || catStr.includes(cleanQ)
+      
+      return byFilter && byQuery
+    })
+  }, [products, filter, query])
 
   return (
     <div className="space-y-6 rtl">
@@ -137,7 +164,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {list.map((p: any) => (
+        {list.map((p: Product) => (
           <ProductCard key={p.id} product={p} />
         ))}
         {list.length === 0 ? (
@@ -168,9 +195,14 @@ function ProductCard({ product: p }: { product: Product }) {
   const [editing, setEditing] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const low = p.stock > 0 && p.stock <= 12
+  // الاعتماد على reorderPoint المخصص بكل منتج مع قيمة افتراضية أمان
+  const reorderThreshold = p.reorderPoint ?? 10
+  const low = p.stock > 0 && p.stock <= reorderThreshold
   const out = p.stock === 0
-  const stockPct = Math.min(100, (p.stock / 80) * 100)
+  
+  // حساب نسبة الشريط بناءً على نقطة التنبيه
+  const maxCapacity = reorderThreshold * 4
+  const stockPct = Math.min(100, (p.stock / maxCapacity) * 100)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -264,13 +296,13 @@ function ProductCard({ product: p }: { product: Product }) {
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="text-muted-foreground">المخزون</span>
               <span className={cn("font-medium", out ? "text-destructive" : low ? "text-warning" : "text-foreground")}>
-                {out ? "نفد" : `${p.stock} قطعة`}
+                {out ? "نافد" : `${p.stock} قطعة`}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn("h-full rounded-full", out ? "bg-destructive" : low ? "bg-warning" : "bg-primary")}
-                style={{ width: `${out ? 100 : stockPct}%` }}
+                className={cn("h-full rounded-full transition-all duration-300", out ? "bg-destructive" : low ? "bg-warning" : "bg-primary")}
+                style={{ width: `${out ? 0 : stockPct}%` }}
               />
             </div>
           </div>
