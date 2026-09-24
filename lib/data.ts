@@ -158,7 +158,7 @@ export const conversation: ChatMessage[] = []
 export const chatbotStats: Stat[] = [
   { id: "cs1", label: "رسائل تمت معالجتها", value: "٠", delta: 0, hint: "هذا الشهر" },
   { id: "cs2", label: "نسبة الرد الآلي", value: "٪٠", delta: 0, hint: "من إجمالي الرسائل" },
-  { id: "cs3", label: "متوسط زمن الرد", value: "٠ ثوانٍ", delta: -15, hint: "أسرع من السابق", lowerIsBetter: true }, // تفعيل lowerIsBetter للمؤشرات العكسية
+  { id: "cs3", label: "متوسط زمن الرد", value: "٠ ثوانٍ", delta: -15, hint: "أسرع من السابق", lowerIsBetter: true },
   { id: "cs4", label: "محادثات نشطة", value: "٠", delta: 0, hint: "خلال ٢٤ ساعة" },
 ]
 
@@ -180,6 +180,17 @@ export const planUsage: UsageMetric[] = [
   { label: "المنتجات المنشورة", used: 0, total: 50, unit: "منتج" },
   { label: "أعضاء الفريق", used: 0, total: 3, unit: "عضو" },
 ]
+
+export type MerchantProfile = {
+  name: string
+  storeName: string
+  phone: string
+  activePlanId: string
+  aiModel: "gemini-2.5-flash" | "gemini-2.5-pro"
+  aiTokensUsed: number
+  aiTokenLimit: number
+  currency: "IQD" | "USD"
+}
 
 export type PlanType = {
   id: string
@@ -225,26 +236,31 @@ export const plans: PlanType[] = [
   },
 ]
 
-export function getStoreKnowledgeContext(): string {
-  const productsList = seedProducts
+// دالة مرنة لإنشاء سياق متجر حديث وديناميكي للذكاء الاصطناعي
+export function getStoreKnowledgeContext(
+  products: Product[] = seedProducts,
+  rules: ReplyRule[] = seedReplyRules
+): string {
+  const productsList = products
     .filter((p) => p.status === "منشور")
     .map((p) => {
-      const isLowStock = p.stock > 0 && p.stock <= p.reorderPoint
+      const reorderThreshold = p.reorderPoint ?? 10
+      const isLowStock = p.stock > 0 && p.stock <= reorderThreshold
       const stockStatus = p.stock === 0 ? "نافد" : isLowStock ? `منخفض جداً (${p.stock})` : `متوفر (${p.stock})`
       return `- اسم المنتج: ${p.name} | السعر: ${formatIQD(p.price)} | التصنيف: ${p.category} | حالة المخزون: ${stockStatus}`
     })
     .join("\n")
 
-  const rulesList = seedReplyRules
+  const rulesList = rules
     .filter((r) => r.enabled)
     .map((r) => `- قاعدة (${r.trigger}): عند الاستفسار بـ (${r.keywords})، الرد الموجه: "${r.reply}"`)
     .join("\n")
 
   return `
 قائمة المنتجات الحالية المتاحة في المتجر:
-${productsList || "لا توجد منتجات حالياً."}
+${productsList || "لا توجد منتجات متوفرة حالياً."}
 
 قواعد الردود المحددة مسبقاً:
-${rulesList}
+${rulesList || "لا توجد قواعد سريعة محددة."}
 `
 }

@@ -1,8 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { salesSeries } from "@/lib/data"
 import { formatIQD } from "@/lib/iraq"
+import { formatPrice } from "@/lib/utils"
+import { useApp } from "@/lib/app-state"
 import { TrendingUp, Bot, DollarSign } from "lucide-react"
 
 const W = 640
@@ -11,25 +13,34 @@ const PAD = 28
 
 function buildPath(values: number[], max: number) {
   const safeMax = max === 0 ? 1 : max
-  const step = (W - PAD * 2) / (values.length - 1)
+  const step = values.length > 1 ? (W - PAD * 2) / (values.length - 1) : 0
   const points = values.map((v, i) => {
     const x = PAD + i * step
     const y = H - PAD - (v / safeMax) * (H - PAD * 2)
     return [x, isNaN(y) ? H - PAD : y] as const
   })
   const line = points.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x} ${y}`).join(" ")
-  const area = `${line} L ${points[points.length - 1][0]} ${H - PAD} L ${points[0][0]} ${H - PAD} Z`
+  const lastX = points.length > 0 ? points[points.length - 1][0] : PAD
+  const firstX = points.length > 0 ? points[0][0] : PAD
+  const area = `${line} L ${lastX} ${H - PAD} L ${firstX} ${H - PAD} Z`
   return { line, area, points }
 }
 
 export function SalesChart() {
+  const { currency } = useApp()
   const [metric, setMetric] = useState<"sales" | "ai_chats">("sales")
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  const renderMoney = useCallback(
+    (amount: number) => {
+      return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+    },
+    [currency]
+  )
 
   // إعداد بيانات معالجة المحادثات بالذكاء الاصطناعي كمؤشر مقارن للمبيعات
   const processedData = salesSeries.map((d, index) => {
     if (metric === "ai_chats") {
-      // محاكاة نمو محادثات البوت بناءً على أداء المبيعات
       const aiCurrent = d.current > 0 ? Math.round(d.current / 1500) : (index + 1) * 28
       const aiPrev = d.previous > 0 ? Math.round(d.previous / 1800) : (index + 1) * 12
       return { ...d, activeCurrent: aiCurrent, activePrevious: aiPrev }
@@ -45,31 +56,35 @@ export function SalesChart() {
   const cur = buildPath(currentValues, max)
   const prev = buildPath(previousValues, max)
 
+  const activeItem = hoveredIndex !== null ? processedData[hoveredIndex] : null
+
   return (
-    <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <section className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-xs rtl text-foreground">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold tracking-tight text-base">
+            <h2 className="font-bold tracking-tight text-sm sm:text-base text-foreground">
               {metric === "sales" ? "تحليلات المبيعات الشهرية" : "محادثات البوت والذكاء الاصطناعي"}
             </h2>
-            <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
               <TrendingUp className="h-3 w-3" />
               مؤشر نشط
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {metric === "sales" ? "مقارنة إجمالي الإيرادات بين العام الحالي والسابق" : "عدد الاستفسارات التي تم الرد عليها تلقائياً عبر Gemini"}
+            {metric === "sales"
+              ? `مقارنة إجمالي الإيرادات (${currency === "IQD" ? "بالدينار العراقي" : "بالدولار"}) بين العام الحالي والسابق`
+              : "عدد الاستفسارات التي تم الرد عليها تلقائياً عبر Gemini"}
           </p>
         </div>
 
         {/* زر التبديل بين المبيعات ومحادثات البوت */}
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
           <button
             onClick={() => setMetric("sales")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.25 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               metric === "sales"
-                ? "bg-background text-foreground shadow-sm font-semibold"
+                ? "bg-background text-foreground shadow-xs border border-border/60"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -78,9 +93,9 @@ export function SalesChart() {
           </button>
           <button
             onClick={() => setMetric("ai_chats")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.25 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               metric === "ai_chats"
-                ? "bg-background text-foreground shadow-sm font-semibold"
+                ? "bg-background text-foreground shadow-xs border border-border/60"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -92,32 +107,32 @@ export function SalesChart() {
 
       <div className="mt-4 relative" dir="ltr" onMouseLeave={() => setHoveredIndex(null)}>
         {/* التلميح التفاعلي (Tooltip) عند التحويم */}
-        {hoveredIndex !== null && (
+        {activeItem && hoveredIndex !== null && (
           <div
-            className="absolute z-20 pointer-events-none rounded-lg border border-border bg-popover/95 p-2.5 text-xs shadow-md backdrop-blur rtl:text-right"
+            className="absolute z-20 pointer-events-none rounded-xl border border-border bg-popover/95 p-3 text-xs shadow-xl backdrop-blur-xs rtl:text-right transition-all duration-150 animate-in fade-in zoom-in-95"
             style={{
-              left: `${(hoveredIndex / (salesSeries.length - 1)) * 80 + 10}%`,
+              left: `${Math.min(82, Math.max(8, (hoveredIndex / (salesSeries.length - 1)) * 80 + 10))}%`,
               top: "10px",
             }}
           >
-            <p className="font-bold text-foreground border-b border-border pb-1 mb-1">
-              شهر {processedData[hoveredIndex].month}
+            <p className="font-bold text-foreground border-b border-border/60 pb-1 mb-1.5">
+              شهر {activeItem.month}
             </p>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-primary font-medium">
-                <span>هذا العام:</span>
+            <div className="space-y-1 font-mono text-[11px]">
+              <div className="flex items-center justify-between gap-4 text-primary font-bold">
+                <span className="font-sans">هذا العام:</span>
                 <span>
                   {metric === "sales"
-                    ? formatIQD(processedData[hoveredIndex].activeCurrent)
-                    : `${processedData[hoveredIndex].activeCurrent.toLocaleString()} رد`}
+                    ? renderMoney(activeItem.activeCurrent)
+                    : `${activeItem.activeCurrent.toLocaleString("ar-IQ")} رد`}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-3 text-muted-foreground">
-                <span>العام الماضي:</span>
+              <div className="flex items-center justify-between gap-4 text-muted-foreground font-medium">
+                <span className="font-sans">العام الماضي:</span>
                 <span>
                   {metric === "sales"
-                    ? formatIQD(processedData[hoveredIndex].activePrevious)
-                    : `${processedData[hoveredIndex].activePrevious.toLocaleString()} رد`}
+                    ? renderMoney(activeItem.activePrevious)
+                    : `${activeItem.activePrevious.toLocaleString("ar-IQ")} رد`}
                 </span>
               </div>
             </div>
@@ -166,7 +181,7 @@ export function SalesChart() {
           />
 
           {/* خط عمودي للمؤشر عند التأشير */}
-          {hoveredIndex !== null && (
+          {hoveredIndex !== null && cur.points[hoveredIndex] && (
             <line
               x1={cur.points[hoveredIndex][0]}
               x2={cur.points[hoveredIndex][0]}
@@ -190,7 +205,6 @@ export function SalesChart() {
                 strokeWidth={hoveredIndex === i ? "3" : "0"}
                 className="transition-all duration-150"
               />
-              {/* مساحة شفافة عريضة لتسهيل التقاط حركات الماوس */}
               <rect
                 x={x - (W - PAD * 2) / (salesSeries.length * 2)}
                 y={PAD}

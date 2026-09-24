@@ -105,6 +105,7 @@ export type MerchantProfile = {
   aiModel: "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-1.5-flash" | "gemini-1.5-pro"
   aiTokensUsed: number
   aiTokenLimit: number
+  currency?: "IQD" | "USD"
   address: Address
   ready: boolean
   notifications?: NotificationPrefs
@@ -213,6 +214,7 @@ function demoUser(): PersistedUser {
       aiModel: defaultPlan.aiModel,
       aiTokensUsed: 120000,
       aiTokenLimit: defaultPlan.monthlyTokenLimit,
+      currency: "IQD",
       ready: true,
       address: {
         governorate: "بغداد",
@@ -296,8 +298,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<string>("dark")
 
   useEffect(() => {
-    setUsers(loadAll())
-    setSessionId(loadSessionId())
+    const loadedUsers = loadAll()
+    const loadedSession = loadSessionId()
+    setUsers(loadedUsers)
+    setSessionId(loadedSession)
+    
+    const activeUser = loadedUsers.find((u) => u.id === loadedSession)
+    if (activeUser) {
+      if (activeUser.language) setLanguageState(activeUser.language)
+      if (activeUser.currency) setCurrencyState(activeUser.currency)
+      if (activeUser.theme) setThemeState(activeUser.theme)
+    }
     setReady(true)
   }, [])
 
@@ -362,7 +373,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setCurrency = useCallback(
     (curr: string) => {
       setCurrencyState(curr)
-      patchCurrent((u) => ({ ...u, currency: curr }))
+      patchCurrent((u) => ({
+        ...u,
+        currency: curr,
+        merchant: { ...u.merchant, currency: curr as "IQD" | "USD" },
+      }))
     },
     [patchCurrent]
   )
@@ -406,6 +421,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           aiModel: defaultPlan.aiModel,
           aiTokensUsed: 0,
           aiTokenLimit: defaultPlan.monthlyTokenLimit,
+          currency: "IQD",
           ready: false,
           address: emptyAddress(),
           notifications: {
@@ -637,7 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         products: [
           {
             ...product,
-            reorderPoint: product.reorderPoint ?? 10, // تعيين قيمة افتراضية لنقطة طلب المخزون إذا لم تحدد
+            reorderPoint: product.reorderPoint ?? 10,
             id: uid("p"),
             sold: 0,
             accent: accents[u.products.length % accents.length],

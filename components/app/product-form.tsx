@@ -14,17 +14,32 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
   const [reorderPoint, setReorderPoint] = useState<number>(product?.reorderPoint ?? 10)
   const [status, setStatus] = useState<ProductStatus>(product?.status || "منشور")
   const [image, setImage] = useState<string>(product?.image || "")
-  const [accent, setAccent] = useState<string>(product?.accent || "var(--chart-1)")
+  const [accent] = useState<string>(product?.accent || "var(--chart-1)")
   const [error, setError] = useState<string | null>(null)
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError("حجم الصورة كبير جداً. يرجى اختيار صورة أقل من 5 ميجابايت.")
+        return
+      }
       const reader = new FileReader()
       reader.onloadend = () => {
         setImage(reader.result as string)
+        setError(null)
       }
       reader.readAsDataURL(file)
+    }
+  }
+
+  const handleStockChange = (newStock: number) => {
+    const val = Math.max(0, newStock)
+    setStock(val)
+    if (val === 0) {
+      setStatus("نافد")
+    } else if (status === "نافد") {
+      setStatus("منشور")
     }
   }
 
@@ -42,11 +57,9 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
       return
     }
 
-    // تحديد حالة المنتج تلقائياً إذا كان المخزون صفراً
     const finalStatus: ProductStatus = stock === 0 ? "نافد" : status
 
     if (product) {
-      // تعديل منتج موجود
       updateProduct({
         ...product,
         name: name.trim(),
@@ -59,7 +72,6 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
         accent,
       })
     } else {
-      // إضافة منتج جديد بدون استخدام any
       addProduct({
         name: name.trim(),
         category: category.trim(),
@@ -75,7 +87,7 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
   }
 
   return (
-    <form className="space-y-4 rtl" onSubmit={handleSubmit}>
+    <form className="space-y-4 rtl text-foreground" onSubmit={handleSubmit}>
       {error && (
         <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-xs font-medium text-destructive border border-destructive/20">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -91,7 +103,8 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
             <button
               type="button"
               onClick={() => setImage("")}
-              className="absolute top-2 left-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md hover:bg-destructive hover:text-white transition-colors"
+              aria-label="حذف الصورة"
+              className="absolute top-2 left-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md hover:bg-destructive hover:text-white transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -99,7 +112,7 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
         ) : (
           <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 hover:bg-muted/50 transition-colors">
             <ImagePlus className="mb-1.5 h-6 w-6 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">اضغط لاختيار صورة من المعرض</span>
+            <span className="text-xs text-muted-foreground font-medium">اضغط لاختيار صورة من المعرض</span>
             <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
           </label>
         )}
@@ -112,7 +125,7 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="مثال: فستان سهرة مخمل"
-          className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors"
+          className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
         />
       </label>
 
@@ -124,7 +137,7 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             placeholder="مثال: أزياء نسائية"
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
 
@@ -134,11 +147,11 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
             value={status}
             onChange={(e) => setStatus(e.target.value as ProductStatus)}
             disabled={stock === 0}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors cursor-pointer disabled:opacity-60"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground disabled:opacity-60"
           >
             <option value="منشور">منشور</option>
             <option value="مسودة">مسودة</option>
-            {stock === 0 && <option value="نافد">نافد</option>}
+            <option value="نافد">نافد</option>
           </select>
         </label>
       </div>
@@ -155,7 +168,7 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
             required
             value={price}
             onChange={(e) => setPrice(Number(e.target.value))}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs font-mono outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
 
@@ -166,20 +179,20 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
             min={0}
             required
             value={stock}
-            onChange={(e) => setStock(Number(e.target.value))}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-ring focus:bg-background transition-colors"
+            onChange={(e) => handleStockChange(Number(e.target.value))}
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs font-mono outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
 
         <label className="block text-sm">
-          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">حد التنبيه للمخزون</span>
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">حد التنبيه</span>
           <input
             type="number"
             min={1}
             required
             value={reorderPoint}
             onChange={(e) => setReorderPoint(Number(e.target.value))}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs font-mono outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
       </div>
@@ -188,13 +201,13 @@ export function ProductForm({ product, onDone }: { product?: Product; onDone: ()
         <button
           type="button"
           onClick={onDone}
-          className="h-10 rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted transition-colors"
+          className="h-10 rounded-lg border border-border px-4 text-xs font-semibold hover:bg-muted transition-colors cursor-pointer"
         >
           إلغاء
         </button>
         <button
           type="submit"
-          className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="h-10 rounded-lg bg-primary px-5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
         >
           {product ? "حفظ التعديلات" : "حفظ المنتج"}
         </button>

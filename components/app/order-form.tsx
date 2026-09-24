@@ -8,6 +8,12 @@ import { type Channel, type OrderStatus } from "@/lib/data"
 import { formatPrice } from "@/lib/utils"
 import { Calculator, AlertCircle } from "lucide-react"
 
+function isValidIraqiPhone(phone: string): boolean {
+  const cleanPhone = phone.replace(/\D/g, "")
+  const iraqiRegex = /^(0)?(77|78|79|75)\d{8}$/
+  return iraqiRegex.test(cleanPhone)
+}
+
 export function OrderForm({ onDone }: { onDone: () => void }) {
   const { products, channels, addOrder, currency } = useApp()
   const connected = useMemo(() => channels.filter((c) => c.connected), [channels])
@@ -22,6 +28,10 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const product = useMemo(() => products.find((p) => p.id === productId), [productId, products])
+
+  const renderMoney = (amount: number) => {
+    return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+  }
 
   const totalAmount = useMemo(() => {
     if (!product) return 0
@@ -42,8 +52,13 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
       return
     }
 
-    if (!address.governorate || !address.city) {
-      setErrorMsg("يرجى إكمال تفاصيل عنوان التوصيل (المحافظة والمدينة).")
+    if (!isValidIraqiPhone(phone)) {
+      setErrorMsg("يرجى إدخال رقم هاتف عراقي صحيح (يبدأ بـ 077, 078, 079, 075).")
+      return
+    }
+
+    if (!address.governorate || !address.city || !address.street) {
+      setErrorMsg("يرجى إكمال تفاصيل عنوان التوصيل الرئيسية (المحافظة، المدينة، والشارع/النقطة الدالة).")
       return
     }
 
@@ -63,7 +78,7 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form className="space-y-4 rtl" onSubmit={handleSubmit}>
+    <form className="space-y-4 rtl text-foreground" onSubmit={handleSubmit}>
       {errorMsg && (
         <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-xs font-medium text-destructive border border-destructive/20">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -79,7 +94,7 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
             value={customer}
             onChange={(e) => setCustomer(e.target.value)}
             placeholder="مثال: أحمد الدليمي"
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
 
@@ -90,7 +105,7 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="07XXXXXXXXX"
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
 
@@ -99,7 +114,7 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
           <select
             value={channel}
             onChange={(e) => setChannel(e.target.value as Channel)}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors cursor-pointer"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground"
           >
             {(connected.length ? connected.map((c) => c.name) : (["إنستغرام", "تيك توك", "واتساب", "سناب شات"] as Channel[])).map((name) => (
               <option key={name} value={name}>{name}</option>
@@ -112,7 +127,7 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as OrderStatus)}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors cursor-pointer"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground"
           >
             <option value="قيد التجهيز">قيد التجهيز</option>
             <option value="تم الشحن">تم الشحن</option>
@@ -126,14 +141,14 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
           <select
             value={productId}
             onChange={(e) => setProductId(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors cursor-pointer"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground"
           >
             {products.length === 0 ? (
               <option value="">لا توجد منتجات متاحة</option>
             ) : (
               products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} — ({currency === "IQD" ? formatIQD(p.price) : formatPrice(p.price, currency)})
+                  {p.name} — ({renderMoney(p.price)})
                 </option>
               ))
             )}
@@ -147,13 +162,13 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
             min={1}
             value={items}
             onChange={(e) => setItems(Math.max(1, Number(e.target.value)))}
-            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm font-mono outline-none focus:border-primary focus:bg-background transition-colors text-foreground"
           />
         </label>
       </div>
 
       <div className="pt-2 border-t border-border/60">
-        <h3 className="text-sm font-semibold mb-3">عنوان التوصيل داخل العراق</h3>
+        <h3 className="text-sm font-semibold mb-3 text-foreground">عنوان التوصيل داخل العراق</h3>
         <AddressForm value={address} onChange={setAddress} />
       </div>
 
@@ -165,13 +180,13 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
             <div>
               <p className="font-semibold text-foreground">معاينة الإجمالي الحسابي</p>
               <p className="text-muted-foreground text-[11px]">
-                {items} قطعة × {currency === "IQD" ? formatIQD(product.price) : formatPrice(product.price, currency)}
+                {items} قطعة × {renderMoney(product.price)}
               </p>
             </div>
           </div>
           <div className="text-right">
-            <span className="text-base font-bold text-primary">
-              {currency === "IQD" ? formatIQD(totalAmount) : formatPrice(totalAmount, currency)}
+            <span className="text-base font-bold text-primary font-mono">
+              {renderMoney(totalAmount)}
             </span>
           </div>
         </div>
@@ -181,14 +196,14 @@ export function OrderForm({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={onDone}
-          className="h-10 rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted transition-colors"
+          className="h-10 rounded-lg border border-border px-4 text-xs font-semibold hover:bg-muted transition-colors cursor-pointer"
         >
           إلغاء
         </button>
         <button
           type="submit"
           disabled={!product}
-          className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-10 rounded-lg bg-primary px-5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           إنشاء الطلب
         </button>

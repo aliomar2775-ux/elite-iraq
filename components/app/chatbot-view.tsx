@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import {
   Bot,
   User,
@@ -37,7 +37,8 @@ import { chatbotStats } from "@/lib/data"
 import { StatCards } from "@/components/app/stat-cards"
 import { Modal } from "@/components/app/modal"
 import { useApp } from "@/lib/app-state"
-import { cn } from "@/lib/utils"
+import { formatIQD } from "@/lib/iraq"
+import { formatPrice, cn } from "@/lib/utils"
 
 // قائمة المحافظات العراقية كاملة
 const IRAQ_GOVERNORATES = [
@@ -139,7 +140,7 @@ interface ChatSession {
 }
 
 export function ChatbotView() {
-  const { rules, toggleRule, addRule, deleteRule, incrementRuleHits, merchant, incrementAiUsage } = useApp()
+  const { rules, toggleRule, addRule, deleteRule, incrementRuleHits, merchant, incrementAiUsage, currency } = useApp()
 
   const [botEnabled, setBotEnabled] = useState(true)
   const [aiEnabled, setAiEnabled] = useState(true)
@@ -192,6 +193,11 @@ export function ChatbotView() {
   const [reply, setReply] = useState("")
 
   const isHomeGovBaghdad = deliveryRates.homeGovName === "بغداد"
+
+  // دالة موحدة لتنسيق العملة
+  const formatMoney = useCallback((amount: number) => {
+    return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+  }, [currency])
 
   const toggleNearGov = (gov: string) => {
     setDeliveryRates((prev) => {
@@ -265,9 +271,12 @@ export function ChatbotView() {
   const [senderType, setSenderType] = useState<"customer" | "merchant">("customer")
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
-  const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) || chats[0], [chats, activeChatId])
+  // حماية التقييم ضد خلو المصفوفة
+  const activeChat = useMemo(() => {
+    return chats.find((c) => c.id === activeChatId) || chats[0] || null
+  }, [chats, activeChatId])
 
-  // المحادثات بعد تطبيق البحث المطور بـ normalizeArabic والتصفية
+  // المحادثات بعد تطبيق البحث والفلترة
   const filteredChats = useMemo(() => {
     const q = normalizeArabic(chatSearchQuery)
     return chats.filter((c) => {
@@ -293,7 +302,7 @@ export function ChatbotView() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [activeChat?.messages])
 
-  const addActivity = (chatId: string, customerName: string, text: string, kind: ActivityLogEntry["kind"]) => {
+  const addActivity = useCallback((chatId: string, customerName: string, text: string, kind: ActivityLogEntry["kind"]) => {
     setActivityLog((prev) => [
       {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -306,7 +315,7 @@ export function ChatbotView() {
       ...prev,
     ].slice(0, 50))
     setUnreadActivity((n) => n + 1)
-  }
+  }, [])
 
   const dispatchToPlatform = async (chat: ChatSession, text: string) => {
     try {
@@ -356,7 +365,7 @@ export function ChatbotView() {
       )
     }, 15000)
     return () => clearInterval(interval)
-  }, [autoResumeMinutes])
+  }, [autoResumeMinutes, addActivity])
 
   const calculateDeliveryFee = (text: string): { gov: string; fee: number } => {
     const cleanText = text.toLowerCase()
@@ -387,6 +396,7 @@ export function ChatbotView() {
   }
 
   const handleTranscribeVoice = (msgId: string) => {
+    if (!activeChat) return
     const simulatedTranscriptions = [
       "عيوني دزلي المنتج لعنواني ديالى بعقوبة الشارع العام مقابل الشغلات وهذا رقمي 07701234567",
       "أريد قطعتين من الساعة ودزهم للبصرة منطقة الجزاير رقمي 07801112223",
@@ -456,8 +466,8 @@ export function ChatbotView() {
           const totalAmount = newPrice + (currentOrder.deliveryFee || 4000)
 
           const botReplyText = `تدلل عيوني! تم تحديث طلبك بنجاح 🔄:\n• المنتج الجديد: ${newProductName}\n• الموعد الجديد: ${newDeliveryDate}\n${
-            priceDelta > 0 ? `• فرق السعر: +${priceDelta.toLocaleString("ar-IQ")} د.ع\n` : ""
-          }• المجموع النهائي مع التوصيل: ${totalAmount.toLocaleString("ar-IQ")} د.ع.`
+            priceDelta > 0 ? `• فرق السعر: +${formatMoney(priceDelta)}\n` : ""
+          }• المجموع النهائي مع التوصيل: ${formatMoney(totalAmount)}.`
 
           return {
             ...c,
@@ -494,7 +504,7 @@ export function ChatbotView() {
     const hasPhone = iqPhoneRegex.test(text)
     const hasAddress = addressKeywords.some((kw) => text.includes(kw))
 
-    if (hasPhone || hasAddress) {
+    if ((hasPhone || hasAddress) && activeChat) {
       const extractedPhone = text.match(iqPhoneRegex)?.[0] || activeChat.customerPhone
       const delivery = calculateDeliveryFee(text)
       setChats((prev) =>
@@ -545,7 +555,6 @@ export function ChatbotView() {
     }
   }
 
-  // حفظ قاعدة الرد الجاهز في السياق المركزي بشكل فعلي
   const handleAddRuleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!trigger.trim() || !keywords.trim() || !reply.trim()) return
@@ -565,7 +574,7 @@ export function ChatbotView() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputText.trim() || isGenerating) return
+    if (!inputText.trim() || isGenerating || !activeChat) return
 
     const msgText = inputText.trim()
     const timeNow = new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" })
@@ -753,7 +762,6 @@ export function ChatbotView() {
 
   return (
     <div className="space-y-6 rtl">
-      
       {/* شريط التحكم الرئيسي */}
       <div className="p-4 rounded-2xl border border-border bg-card space-y-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-3">
@@ -761,7 +769,7 @@ export function ChatbotView() {
             <button
               onClick={() => setBotEnabled(!botEnabled)}
               className={cn(
-                "h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm",
+                "h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm cursor-pointer",
                 botEnabled ? "bg-emerald-600 text-white hover:bg-emerald-500" : "bg-muted text-muted-foreground"
               )}
             >
@@ -772,7 +780,7 @@ export function ChatbotView() {
             <button
               onClick={() => setAiEnabled(!aiEnabled)}
               className={cn(
-                "h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm border",
+                "h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm border cursor-pointer",
                 aiEnabled ? "bg-primary/10 text-primary border-primary/30" : "bg-muted/50 text-muted-foreground"
               )}
             >
@@ -782,7 +790,7 @@ export function ChatbotView() {
 
             <button
               onClick={() => setOpenRatesModal(true)}
-              className="h-10 px-3.5 rounded-xl bg-secondary text-secondary-foreground font-bold text-xs border border-border hover:bg-secondary/80 transition-all flex items-center gap-1.5"
+              className="h-10 px-3.5 rounded-xl bg-secondary text-secondary-foreground font-bold text-xs border border-border hover:bg-secondary/80 transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Truck className="h-4 w-4 text-primary" />
               تخصيص أسعار الشحن 🚚
@@ -795,7 +803,7 @@ export function ChatbotView() {
             <select
               value={autoResumeMinutes}
               onChange={(e) => setAutoResumeMinutes(Number(e.target.value))}
-              className="h-8 px-2 rounded-lg bg-background border border-border text-xs font-mono font-bold"
+              className="h-8 px-2 rounded-lg bg-background border border-border text-xs font-mono font-bold cursor-pointer"
             >
               <option value={5}>5 دقائق</option>
               <option value={10}>10 دقائق</option>
@@ -808,7 +816,7 @@ export function ChatbotView() {
                 setShowActivityPanel((v) => !v)
                 setUnreadActivity(0)
               }}
-              className="relative h-10 w-10 rounded-xl border border-border bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all"
+              className="relative h-10 w-10 rounded-xl border border-border bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all cursor-pointer"
               title="سجل الأحداث والإشعارات"
             >
               <Bell className="h-4 w-4 text-foreground" />
@@ -822,10 +830,10 @@ export function ChatbotView() {
             {showActivityPanel && (
               <div className="absolute left-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-border bg-card shadow-xl z-20 p-2 space-y-1">
                 <div className="flex items-center justify-between px-2 py-1 border-b border-border/60 mb-1">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-foreground">
                     <History className="h-3.5 w-3.5 text-primary" /> سجل الأحداث
                   </span>
-                  <button onClick={() => setShowActivityPanel(false)} className="text-muted-foreground hover:text-foreground">
+                  <button onClick={() => setShowActivityPanel(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -863,7 +871,7 @@ export function ChatbotView() {
 
           <button
             onClick={() => setOpenRuleModal(true)}
-            className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground flex items-center gap-2 shadow-md shadow-primary/20 hover:opacity-90"
+            className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground flex items-center gap-2 shadow-md shadow-primary/20 hover:opacity-90 cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             إضافة كلمة مفتاحية ورّد جاهز (توفير التوكنز) ⚡
@@ -874,12 +882,11 @@ export function ChatbotView() {
       <StatCards stats={chatbotStats} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        
         {/* قائمة القواعد الجاهزة */}
         <section className="rounded-xl border border-border bg-card xl:col-span-5 shadow-sm">
           <div className="border-b border-border p-4 flex items-center justify-between">
             <div>
-              <h2 className="font-semibold tracking-tight text-sm">قواعد الرد التلقائي المجاني</h2>
+              <h2 className="font-semibold tracking-tight text-sm text-foreground">قواعد الرد التلقائي المجاني</h2>
               <p className="text-[11px] text-muted-foreground">ردود فورية بسرعة 0.1 ثانية وبدون توكنات.</p>
             </div>
             <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold text-emerald-500">
@@ -894,7 +901,7 @@ export function ChatbotView() {
                 <li key={r.id} className="flex items-start justify-between gap-3 p-4 hover:bg-muted/20 transition-colors">
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2">
-                      <p className="font-bold text-xs">{r.trigger}</p>
+                      <p className="font-bold text-xs text-foreground">{r.trigger}</p>
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
                         {r.hits.toLocaleString("ar-IQ")} رد مجاني
                       </span>
@@ -913,11 +920,11 @@ export function ChatbotView() {
                       aria-checked={r.enabled}
                       aria-label="تفعيل أو تعطيل القاعدة"
                       onClick={() => toggleRule(r.id)}
-                      className={cn("relative h-5 w-9 rounded-full transition-colors", r.enabled ? "bg-primary" : "bg-muted")}
+                      className={cn("relative h-5 w-9 rounded-full transition-colors cursor-pointer", r.enabled ? "bg-primary" : "bg-muted")}
                     >
                       <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", r.enabled ? "right-0.5" : "right-4.5")} />
                     </button>
-                    <button onClick={() => deleteRule(r.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-md" title="حذف القاعدة">
+                    <button onClick={() => deleteRule(r.id)} className="p-1 text-muted-foreground hover:text-destructive rounded-md cursor-pointer" title="حذف القاعدة">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -929,12 +936,11 @@ export function ChatbotView() {
 
         {/* منطقة إدارة المحادثات الحية */}
         <section className="xl:col-span-7 grid grid-cols-1 md:grid-cols-12 rounded-xl border border-border bg-card shadow-sm overflow-hidden h-155">
-          
           <div className="md:col-span-4 border-l border-border flex flex-col bg-muted/20">
             <div className="p-3 border-b border-border bg-card space-y-2">
               <h3 className="font-bold text-xs text-foreground flex items-center justify-between">
                 <span>المحادثات النشطة</span>
-                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">
+                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono font-bold">
                   {filteredChats.length}/{chats.length}
                 </span>
               </h3>
@@ -945,7 +951,7 @@ export function ChatbotView() {
                   value={chatSearchQuery}
                   onChange={(e) => setChatSearchQuery(e.target.value)}
                   placeholder="بحث بالاسم، الحساب أو الرقم..."
-                  className="h-8 w-full rounded-lg border border-border bg-background pr-8 pl-2 text-[11px] outline-none focus:border-primary"
+                  className="h-8 w-full rounded-lg border border-border bg-background pr-8 pl-2 text-[11px] outline-none focus:border-primary text-foreground"
                 />
               </div>
 
@@ -960,7 +966,7 @@ export function ChatbotView() {
                     key={f.key}
                     onClick={() => setChatStatusFilter(f.key)}
                     className={cn(
-                      "px-2 py-1 rounded-md text-[10px] font-bold border transition-all",
+                      "px-2 py-1 rounded-md text-[10px] font-bold border transition-all cursor-pointer",
                       chatStatusFilter === f.key
                         ? "bg-primary text-primary-foreground border-primary"
                         : "bg-background text-muted-foreground border-border hover:text-foreground"
@@ -971,6 +977,7 @@ export function ChatbotView() {
                 ))}
               </div>
             </div>
+
             <div className="flex-1 overflow-y-auto divide-y divide-border/60">
               {filteredChats.length === 0 ? (
                 <p className="p-6 text-center text-[11px] text-muted-foreground">لا توجد محادثات مطابقة للبحث/التصفية.</p>
@@ -993,7 +1000,7 @@ export function ChatbotView() {
                         <AtSign className="h-3 w-3 text-primary/70" />
                         {c.customerHandle.replace("@", "")}
                       </span>
-                      <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground border">
+                      <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border">
                         {c.platform}
                       </span>
                     </div>
@@ -1019,218 +1026,224 @@ export function ChatbotView() {
           </div>
 
           <div className="md:col-span-8 flex flex-col h-full bg-background/40">
-            
-            <div className="p-3 border-b border-border bg-card flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-xs text-foreground">{activeChat.customerName}</h4>
-                    
-                    <a
-                      href={`https://${activeChat.platform}.com/${activeChat.customerHandle.replace("@", "")}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 hover:bg-primary/20 transition-all flex items-center gap-1"
-                      title="فتح حساب الزبون المباشر"
+            {activeChat ? (
+              <>
+                <div className="p-3 border-b border-border bg-card flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs text-foreground">{activeChat.customerName}</h4>
+                        
+                        <a
+                          href={`https://${activeChat.platform}.com/${activeChat.customerHandle.replace("@", "")}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 hover:bg-primary/20 transition-all flex items-center gap-1"
+                          title="فتح حساب الزبون المباشر"
+                        >
+                          <AtSign className="h-3 w-3" />
+                          {activeChat.customerHandle.replace("@", "")}
+                          <ExternalLink className="h-2.5 w-2.5 opacity-70" />
+                        </a>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{activeChat.customerPhone} • {activeChat.platform.toUpperCase()}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleSummarizeChat(activeChat)}
+                      disabled={isSummarizing}
+                      className="h-8 px-2.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold flex items-center gap-1.5 hover:bg-primary/20 disabled:opacity-60 cursor-pointer"
+                      title="تلخيص المحادثة بالذكاء الاصطناعي"
                     >
-                      <AtSign className="h-3 w-3" />
-                      {activeChat.customerHandle.replace("@", "")}
-                      <ExternalLink className="h-2.5 w-2.5 opacity-70" />
-                    </a>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{activeChat.customerPhone} • {activeChat.platform.toUpperCase()}</p>
-                </div>
-              </div>
+                      {isSummarizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      تلخيص المحادثة
+                    </button>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => handleSummarizeChat(activeChat)}
-                  disabled={isSummarizing}
-                  className="h-8 px-2.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold flex items-center gap-1.5 hover:bg-primary/20 disabled:opacity-60"
-                  title="تلخيص المحادثة بالذكاء الاصطناعي"
-                >
-                  {isSummarizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  تلخيص المحادثة
-                </button>
-
-                {activeChat.customerProfile.riskLevel === "HIGH" ? (
-                  <span className="text-[10px] bg-red-500/15 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/30 flex items-center gap-1">
-                    <ShieldAlert className="h-3.5 w-3.5" /> راجع سابق ({activeChat.customerProfile.returnedOrders})
-                  </span>
-                ) : (
-                  <span className="text-[10px] bg-emerald-500/15 text-emerald-400 font-bold px-2 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1">
-                    <ShieldCheck className="h-3.5 w-3.5" /> زبون موثوق
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {activeChat.isUrgent && (
-              <div className="mx-3 mt-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 text-[11px] font-bold flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                رُصدت رسالة عاجلة/شكوى في هذه المحادثة — تم إيقاف الرد الآلي بانتظار تدخلك.
-              </div>
-            )}
-
-            {summaryText[activeChat.id] && (
-              <div className="mx-3 mt-3 p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-[11px] leading-relaxed flex items-start gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                <p className="text-foreground">{summaryText[activeChat.id]}</p>
-              </div>
-            )}
-
-            {/* الوصل مع أجور التوصيل المحسوبة */}
-            {activeChat.extractedOrder && (
-              <div className={`m-3 p-3 rounded-xl text-[11px] space-y-1.5 border ${
-                activeChat.extractedOrder.isModified
-                  ? "bg-amber-500/10 border-amber-500/40"
-                  : "bg-emerald-500/10 border-emerald-500/30"
-              }`}>
-                <div className="flex items-center justify-between font-bold">
-                  <span className={`flex items-center gap-1.5 ${
-                    activeChat.extractedOrder.isModified ? "text-amber-400" : "text-emerald-400"
-                  }`}>
-                    {activeChat.extractedOrder.isModified ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 text-amber-400" />
-                        وصل طلب معدّل تلقائياً:
-                      </>
+                    {activeChat.customerProfile.riskLevel === "HIGH" ? (
+                      <span className="text-[10px] bg-red-500/15 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/30 flex items-center gap-1">
+                        <ShieldAlert className="h-3.5 w-3.5" /> راجع سابق ({activeChat.customerProfile.returnedOrders})
+                      </span>
                     ) : (
-                      <>
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        تفاصيل الطلب المؤكد:
-                      </>
+                      <span className="text-[10px] bg-emerald-500/15 text-emerald-400 font-bold px-2 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1">
+                        <ShieldCheck className="h-3.5 w-3.5" /> زبون موثوق
+                      </span>
                     )}
-                  </span>
-
-                  <span className="text-[10px] font-mono bg-background/80 text-foreground px-2 py-0.5 rounded border flex items-center gap-1">
-                    <AtSign className="h-3 w-3 text-primary" />
-                    {activeChat.customerHandle}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono">
-                  <div>🛍️ المنتج: <strong className="text-foreground">{activeChat.extractedOrder.productName}</strong></div>
-                  <div>📅 الموعد: <strong className="text-foreground">{activeChat.extractedOrder.deliveryDate}</strong></div>
-                  <div>📍 العنوان: {activeChat.extractedOrder.address}</div>
-                  <div className="text-emerald-400 font-bold flex items-center gap-1">
-                    <Truck className="h-3.5 w-3.5" />
-                    التوصيل ({activeChat.extractedOrder.governorate}): {activeChat.extractedOrder.deliveryFee?.toLocaleString("ar-IQ")} د.ع
-                  </div>
-                  <div className="col-span-2 text-primary font-bold text-xs pt-1 border-t border-border/40">
-                    💰 المجموع الكلي: {((activeChat.extractedOrder.productPrice || 35000) + (activeChat.extractedOrder.deliveryFee || 4000)).toLocaleString("ar-IQ")} د.ع
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* قائمة الرسائل مع الفويسات */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
-              {activeChat.messages.map((m) => {
-                const isBot = m.sender === "bot"
-                const isMerchant = m.sender === "merchant"
-                const isVoice = m.type === "voice"
+                {activeChat.isUrgent && (
+                  <div className="mx-3 mt-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 text-[11px] font-bold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    رُصدت رسالة عاجلة/شكوى في هذه المحادثة — تم إيقاف الرد الآلي بانتظار تدخلك.
+                  </div>
+                )}
 
-                if (m.sender === "system") {
-                  return (
-                    <div key={m.id} className="flex justify-center">
-                      <span className="max-w-[90%] text-center text-[10px] font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 py-1.5 leading-relaxed">
-                        {m.text}
+                {summaryText[activeChat.id] && (
+                  <div className="mx-3 mt-3 p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-[11px] leading-relaxed flex items-start gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                    <p className="text-foreground">{summaryText[activeChat.id]}</p>
+                  </div>
+                )}
+
+                {/* الوصل مع أجور التوصيل المحسوبة */}
+                {activeChat.extractedOrder && (
+                  <div className={`m-3 p-3 rounded-xl text-[11px] space-y-1.5 border ${
+                    activeChat.extractedOrder.isModified
+                      ? "bg-amber-500/10 border-amber-500/40"
+                      : "bg-emerald-500/10 border-emerald-500/30"
+                  }`}>
+                    <div className="flex items-center justify-between font-bold">
+                      <span className={`flex items-center gap-1.5 ${
+                        activeChat.extractedOrder.isModified ? "text-amber-400" : "text-emerald-400"
+                      }`}>
+                        {activeChat.extractedOrder.isModified ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 text-amber-400" />
+                            وصل طلب معدّل تلقائياً:
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                            تفاصيل الطلب المؤكد:
+                          </>
+                        )}
+                      </span>
+
+                      <span className="text-[10px] font-mono bg-background/80 text-foreground px-2 py-0.5 rounded border flex items-center gap-1">
+                        <AtSign className="h-3 w-3 text-primary" />
+                        {activeChat.customerHandle}
                       </span>
                     </div>
-                  )
-                }
 
-                return (
-                  <div key={m.id} className={`flex gap-2 ${m.sender === "customer" ? "flex-row" : "flex-row-reverse"}`}>
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                      isBot ? "bg-primary/15 text-primary" : isMerchant ? "bg-emerald-500/20 text-emerald-500" : "bg-muted text-muted-foreground"
-                    }`}>
-                      {isBot ? <Bot className="h-3.5 w-3.5" /> : isMerchant ? <UserCheck className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
-                    </span>
-
-                    <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-line ${
-                      isBot ? "bg-muted text-foreground rounded-tr-none" : isMerchant ? "bg-emerald-600 text-white rounded-tl-none" : "bg-primary text-primary-foreground rounded-tl-none"
-                    }`}>
-                      {isVoice ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg">
-                            <Play className="h-4 w-4 text-white fill-white shrink-0" />
-                            <div className="h-1.5 flex-1 bg-white/30 rounded-full overflow-hidden">
-                              <div className="w-1/3 h-full bg-white" />
-                            </div>
-                            <span className="font-mono text-[10px]">{m.audioDuration}</span>
-                            <Mic className="h-3.5 w-3.5 text-white/80" />
-                          </div>
-
-                          {!m.isTranscribed ? (
-                            <button
-                              onClick={() => handleTranscribeVoice(m.id)}
-                              className="w-full text-[10px] font-bold py-1 px-2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all flex items-center justify-center gap-1.5"
-                            >
-                              <FileText className="h-3 w-3" /> تفريغ الفويس بالذكاء الاصطناعي (STT) 🪄
-                            </button>
-                          ) : (
-                            <p className="text-[11px] font-medium leading-relaxed bg-black/20 p-2 rounded text-emerald-300">
-                              {m.text}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <p>{m.text}</p>
-                      )}
-
-                      <p className="mt-1 text-[9px] opacity-70 text-left">{m.time}</p>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono">
+                      <div>🛍️ المنتج: <strong className="text-foreground">{activeChat.extractedOrder.productName}</strong></div>
+                      <div>📅 الموعد: <strong className="text-foreground">{activeChat.extractedOrder.deliveryDate}</strong></div>
+                      <div>📍 العنوان: {activeChat.extractedOrder.address}</div>
+                      <div className="text-emerald-400 font-bold flex items-center gap-1">
+                        <Truck className="h-3.5 w-3.5" />
+                        التوصيل ({activeChat.extractedOrder.governorate}): {formatMoney(activeChat.extractedOrder.deliveryFee || 0)}
+                      </div>
+                      <div className="col-span-2 text-primary font-bold text-xs pt-1 border-t border-border/40">
+                        💰 المجموع الكلي: {formatMoney((activeChat.extractedOrder.productPrice || 35000) + (activeChat.extractedOrder.deliveryFee || 4000))}
+                      </div>
                     </div>
                   </div>
-                )
-              })}
-              <div ref={chatBottomRef} />
-            </div>
+                )}
 
-            <form onSubmit={handleSendMessage} className="p-2 border-t border-border bg-card space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
-                <span>تحديد صاحب الرد:</span>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="radio" name="sender" checked={senderType === "customer"} onChange={() => setSenderType("customer")} className="accent-primary" />
-                    <span>الزبون</span>
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="radio" name="sender" checked={senderType === "merchant"} onChange={() => setSenderType("merchant")} className="accent-emerald-500" />
-                    <span className="text-emerald-500 font-bold">التاجر (يدوي - المراقبة الصامتة)</span>
-                  </label>
+                {/* قائمة الرسائل مع الفويسات */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  {activeChat.messages.map((m) => {
+                    const isBot = m.sender === "bot"
+                    const isMerchant = m.sender === "merchant"
+                    const isVoice = m.type === "voice"
+
+                    if (m.sender === "system") {
+                      return (
+                        <div key={m.id} className="flex justify-center">
+                          <span className="max-w-[90%] text-center text-[10px] font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 py-1.5 leading-relaxed">
+                            {m.text}
+                          </span>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div key={m.id} className={`flex gap-2 ${m.sender === "customer" ? "flex-row" : "flex-row-reverse"}`}>
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                          isBot ? "bg-primary/15 text-primary" : isMerchant ? "bg-emerald-500/20 text-emerald-500" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {isBot ? <Bot className="h-3.5 w-3.5" /> : isMerchant ? <UserCheck className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
+                        </span>
+
+                        <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-line ${
+                          isBot ? "bg-muted text-foreground rounded-tr-none" : isMerchant ? "bg-emerald-600 text-white rounded-tl-none" : "bg-primary text-primary-foreground rounded-tl-none"
+                        }`}>
+                          {isVoice ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg">
+                                <Play className="h-4 w-4 text-white fill-white shrink-0" />
+                                <div className="h-1.5 flex-1 bg-white/30 rounded-full overflow-hidden">
+                                  <div className="w-1/3 h-full bg-white" />
+                                </div>
+                                <span className="font-mono text-[10px]">{m.audioDuration}</span>
+                                <Mic className="h-3.5 w-3.5 text-white/80" />
+                              </div>
+
+                              {!m.isTranscribed ? (
+                                <button
+                                  onClick={() => handleTranscribeVoice(m.id)}
+                                  className="w-full text-[10px] font-bold py-1 px-2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <FileText className="h-3 w-3" /> تفريغ الفويس بالذكاء الاصطناعي (STT) 🪄
+                                </button>
+                              ) : (
+                                <p className="text-[11px] font-medium leading-relaxed bg-black/20 p-2 rounded text-emerald-300">
+                                  {m.text}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p>{m.text}</p>
+                          )}
+
+                          <p className="mt-1 text-[9px] opacity-70 text-left">{m.time}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div ref={chatBottomRef} />
                 </div>
-              </div>
 
-              {senderType === "merchant" && (
-                <div className="flex flex-wrap gap-1.5 px-1">
-                  {QUICK_REPLIES.map((qr, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setInputText(qr)}
-                      className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all"
-                    >
-                      {qr}
+                <form onSubmit={handleSendMessage} className="p-2 border-t border-border bg-card space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
+                    <span>تحديد صاحب الرد:</span>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="sender" checked={senderType === "customer"} onChange={() => setSenderType("customer")} className="accent-primary" />
+                        <span>الزبون</span>
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="sender" checked={senderType === "merchant"} onChange={() => setSenderType("merchant")} className="accent-emerald-500" />
+                        <span className="text-emerald-500 font-bold">التاجر (يدوي - المراقبة الصامتة)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {senderType === "merchant" && (
+                    <div className="flex flex-wrap gap-1.5 px-1">
+                      {QUICK_REPLIES.map((qr) => (
+                        <button
+                          key={qr}
+                          type="button"
+                          onClick={() => setInputText(qr)}
+                          className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all cursor-pointer"
+                        >
+                          {qr}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <input
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="جرب رسالة تعديل: (غيرلي الموعد للسبت / أريد الموديل الـ Pro)..."
+                      className="flex-1 h-9 rounded-lg border border-border px-3 text-xs bg-background outline-none focus:border-primary text-foreground"
+                    />
+                    <button type="submit" className="h-9 px-3.5 rounded-lg bg-primary font-bold text-xs text-white hover:opacity-90 cursor-pointer">
+                      <Send className="h-3.5 w-3.5" />
                     </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <input
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="جرب رسالة تعديل: (غيرلي الموعد للسبت / أريد الموديل الـ Pro)..."
-                  className="flex-1 h-9 rounded-lg border border-border px-3 text-xs bg-background outline-none focus:border-primary"
-                />
-                <button type="submit" className="h-9 px-3.5 rounded-lg bg-primary font-bold text-xs text-white">
-                  <Send className="h-3.5 w-3.5" />
-                </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground p-6">
+                اختر محادثة لعرض تفاصيلها والرد عليها
               </div>
-            </form>
-
+            )}
           </div>
         </section>
       </div>
@@ -1316,20 +1329,20 @@ export function ChatbotView() {
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="block font-semibold mb-1 text-foreground">
-                  داخل {deliveryRates.homeGovName} (د.ع)
+                  داخل {deliveryRates.homeGovName}
                 </label>
                 <input
                   type="number"
                   required
                   value={deliveryRates.homeGovFee}
                   onChange={(e) => setDeliveryRates({ ...deliveryRates, homeGovFee: Number(e.target.value) })}
-                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold text-foreground"
                 />
               </div>
 
               <div>
                 <label className="font-semibold mb-1 text-foreground flex items-center justify-between">
-                  <span>إلى العاصمة بغداد (د.ع)</span>
+                  <span>إلى العاصمة بغداد</span>
                   {isHomeGovBaghdad && <span className="text-[9px] text-amber-500 font-bold">(هي المحافظة الرئيسية)</span>}
                 </label>
                 <div className="relative">
@@ -1353,7 +1366,7 @@ export function ChatbotView() {
 
               <div>
                 <label className="block font-semibold mb-1 text-foreground">
-                  المحافظات القريبة (د.ع)
+                  المحافظات القريبة
                 </label>
                 <input
                   type="number"
@@ -1367,7 +1380,7 @@ export function ChatbotView() {
 
               <div>
                 <label className="block font-semibold mb-1 text-foreground">
-                  المحافظات البعيدة (المتبقية) (د.ع)
+                  المحافظات البعيدة (المتبقية)
                 </label>
                 <input
                   type="number"
@@ -1375,32 +1388,32 @@ export function ChatbotView() {
                   value={deliveryRates.farGovsFee}
                   onChange={(e) => setDeliveryRates({ ...deliveryRates, farGovsFee: Number(e.target.value) })}
                   placeholder="10000"
-                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold text-foreground"
                 />
               </div>
 
               <div className="col-span-2">
                 <label className="block font-semibold mb-1 text-foreground">
-                  الأطراف والنواحي والقرى النائية (د.ع)
+                  الأطراف والنواحي والقرى النائية
                 </label>
                 <input
                   type="number"
                   required
                   value={deliveryRates.remoteFee}
                   onChange={(e) => setDeliveryRates({ ...deliveryRates, remoteFee: Number(e.target.value) })}
-                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary font-mono font-bold text-foreground"
                 />
               </div>
             </div>
 
             <div className="flex gap-2 pt-3">
-              <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-bold text-primary-foreground hover:opacity-90">
+              <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-bold text-primary-foreground hover:opacity-90 cursor-pointer">
                 حفظ الأسعار والتصنيفات وتطبيقها فوراً 🚚
               </button>
               <button
                 type="button"
                 onClick={() => setOpenRatesModal(false)}
-                className="h-10 rounded-lg border border-border px-4 font-medium"
+                className="h-10 rounded-lg border border-border px-4 font-medium hover:bg-muted cursor-pointer"
               >
                 إلغاء
               </button>
@@ -1425,47 +1438,47 @@ export function ChatbotView() {
 
             <form onSubmit={handleAddRuleSubmit} className="space-y-3">
               <div>
-                <label className="block font-semibold mb-1">عنوان القاعدة</label>
+                <label className="block font-semibold mb-1 text-foreground">عنوان القاعدة</label>
                 <input
                   required
                   value={trigger}
                   onChange={(e) => setTrigger(e.target.value)}
                   placeholder="مثال: عنوان المحل"
-                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
+                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">الكلمات المفتاحية (افصل بينها بفاصلة)</label>
+                <label className="block font-semibold mb-1 text-foreground">الكلمات المفتاحية (افصل بينها بفاصلة)</label>
                 <input
                   required
                   value={keywords}
                   onChange={(e) => setKeywords(e.target.value)}
                   placeholder="مثال: موقعكم، وين المحل، الفرع، العنوان"
-                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-ring"
+                  className="h-10 w-full rounded-lg border border-border bg-muted/20 px-3 text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">الرد التلقائي الجاهز (0 توكنز)</label>
+                <label className="block font-semibold mb-1 text-foreground">الرد التلقائي الجاهز (0 توكنز)</label>
                 <textarea
                   required
                   rows={3}
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   placeholder="أهلاً بك عيوني! موقعنا في بغداد..."
-                  className="w-full rounded-lg border border-border bg-muted/20 p-3 text-xs outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-muted/20 p-3 text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-semibold text-primary-foreground hover:opacity-90">
+                <button type="submit" className="flex-1 h-10 rounded-lg bg-primary font-semibold text-primary-foreground hover:opacity-90 cursor-pointer">
                   حفظ القاعدة وتوفير التوكنز ⚡
                 </button>
                 <button
                   type="button"
                   onClick={() => setOpenRuleModal(false)}
-                  className="h-10 rounded-lg border border-border px-4 font-medium"
+                  className="h-10 rounded-lg border border-border px-4 font-medium hover:bg-muted cursor-pointer"
                 >
                   إلغاء
                 </button>

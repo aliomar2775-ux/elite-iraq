@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Search, Truck, PackageCheck, Clock, RotateCcw, Filter, MapPin, Tag, Edit2, Trash2, X } from "lucide-react"
 import { type OrderStatus, type Order } from "@/lib/data"
 import { OrderStatusBadge } from "@/components/app/status-badge"
@@ -45,7 +45,15 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  // 🎯 الاستماع الفوري لحدث التصفية القادم من شريط البحث العلوي (Topbar)
+  // دالة موحدة لتنسيق المبالغ المالي
+  const renderMoney = useCallback(
+    (amount: number) => {
+      return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+    },
+    [currency]
+  )
+
+  // الاستماع الفوري لحدث التصفية القادم من شريط البحث العلوي (Topbar)
   useEffect(() => {
     const handleFilterOrder = (e: Event) => {
       const customEvent = e as CustomEvent<string>
@@ -61,21 +69,24 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
   }, [])
 
   // حساب أرقام الملخصات ديناميكياً مع التخزين التلقائي
-  const summary = useMemo(() => [
-    { label: "قيد التجهيز", value: orders.filter((o) => o.status === "قيد التجهيز").length, icon: Clock, tint: "text-warning bg-warning/15" },
-    { label: "قيد الشحن", value: orders.filter((o) => o.status === "تم الشحن").length, icon: Truck, tint: "text-primary bg-primary/15" },
-    { label: "تم التوصيل", value: orders.filter((o) => o.status === "تم التوصيل").length, icon: PackageCheck, tint: "text-success bg-success/15" },
-    { label: "مرتجعات", value: orders.filter((o) => o.status === "مسترجع").length, icon: RotateCcw, tint: "text-destructive bg-destructive/15" },
-  ], [orders])
+  const summary = useMemo(
+    () => [
+      { label: "قيد التجهيز", value: orders.filter((o) => o.status === "قيد التجهيز").length, icon: Clock, tint: "text-amber-500 bg-amber-500/15" },
+      { label: "قيد الشحن", value: orders.filter((o) => o.status === "تم الشحن").length, icon: Truck, tint: "text-primary bg-primary/15" },
+      { label: "تم التوصيل", value: orders.filter((o) => o.status === "تم التوصيل").length, icon: PackageCheck, tint: "text-emerald-500 bg-emerald-500/15" },
+      { label: "مرتجعات", value: orders.filter((o) => o.status === "مسترجع").length, icon: RotateCcw, tint: "text-destructive bg-destructive/15" },
+    ],
+    [orders]
+  )
 
-  // تصفية الطلبات بمرونة عربية وتجنب استخدام any
+  // تصفية الطلبات بمرونة عربية
   const filteredOrders = useMemo(() => {
     const cleanQ = normalizeArabic(query)
 
     return orders.filter((o) => {
       const matchesGovernorate = selectedGovernorate === "الكل" || o.governorate === selectedGovernorate
       const matchesStatus = selectedStatus === "الكل" || o.status === selectedStatus
-      
+
       if (!cleanQ) return matchesGovernorate && matchesStatus
 
       const customerStr = normalizeArabic(o.customer || "")
@@ -84,7 +95,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
       const govStr = normalizeArabic(o.governorate || "")
       const phoneStr = normalizeArabic(o.phone || "")
 
-      const matchesQuery = 
+      const matchesQuery =
         customerStr.includes(cleanQ) ||
         idStr.includes(cleanQ) ||
         cityStr.includes(cleanQ) ||
@@ -117,10 +128,13 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
   }
 
   return (
-    <div className="space-y-6 rtl">
+    <div className="space-y-6 rtl text-foreground">
       {onCreate ? (
         <div className="flex justify-end">
-          <button onClick={() => setOpen(true)} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+          <button
+            onClick={() => setOpen(true)}
+            className="rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+          >
             طلب جديد
           </button>
         </div>
@@ -128,23 +142,23 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {summary.map((s) => (
-          <div key={s.label} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
-            <div className={cn("flex h-11 w-11 items-center justify-center rounded-lg", s.tint)}>
+          <div key={s.label} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-xs">
+            <div className={cn("flex h-11 w-11 items-center justify-center rounded-lg shrink-0", s.tint)}>
               <s.icon className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xl font-bold tracking-tight">{s.value.toLocaleString("ar-IQ")}</p>
+              <p className="text-xl font-bold tracking-tight font-mono">{s.value.toLocaleString("ar-IQ")}</p>
               <p className="text-xs text-muted-foreground">{s.label}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-        <div className="flex items-center justify-between border-b border-border pb-3">
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold">تصفية الطلبات</h3>
+            <h3 className="text-xs font-bold text-foreground">تصفية الطلبات</h3>
           </div>
           {(selectedGovernorate !== "الكل" || selectedStatus !== "الكل" || query) && (
             <button
@@ -153,7 +167,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                 setSelectedStatus("الكل")
                 setQuery("")
               }}
-              className="text-xs text-muted-foreground hover:text-primary transition-colors underline"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors underline cursor-pointer"
             >
               إعادة ضبط الفلاتر
             </button>
@@ -169,7 +183,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
             <select
               value={selectedGovernorate}
               onChange={(e) => setSelectedGovernorate(e.target.value)}
-              className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors"
+              className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground"
             >
               <option value="الكل">جميع المحافظات ({orders.length})</option>
               {IRAQ_GOVERNORATES.map((gov) => {
@@ -191,7 +205,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background transition-colors"
+              className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-xs outline-none focus:border-primary focus:bg-background transition-colors cursor-pointer text-foreground"
             >
               <option value="الكل">جميع الحالات</option>
               {orderStatuses.map((st) => {
@@ -216,12 +230,12 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="ابحث برقم الطلب، اسم العميل، المدينة..."
-                className="h-10 w-full rounded-lg border border-border bg-muted/30 pr-10 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:bg-background transition-colors"
+                className="h-10 w-full rounded-lg border border-border bg-muted/30 pr-10 pl-8 text-xs outline-none placeholder:text-muted-foreground focus:border-primary focus:bg-background transition-colors text-foreground"
               />
               {query && (
                 <button
                   onClick={() => setQuery("")}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
                   title="مسح البحث"
                 >
                   <X className="h-4 w-4" />
@@ -234,8 +248,10 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
         {/* تنبيه التصفية المباشرة */}
         {query && (
           <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-xs text-emerald-500">
-            <span>عرض نتائج البحث عن: <strong>"{query}"</strong></span>
-            <button onClick={() => setQuery("")} className="underline font-bold hover:text-emerald-400">
+            <span>
+              عرض نتائج البحث عن: <strong>"{query}"</strong>
+            </span>
+            <button onClick={() => setQuery("")} className="underline font-bold hover:text-emerald-400 cursor-pointer">
               إظهار كافة الطلبات
             </button>
           </div>
@@ -244,28 +260,29 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
         {/* إجمالي المبيعات بالعملة الديناميكية */}
         <div className="flex flex-wrap items-center justify-between pt-2 border-t border-border/50 text-xs text-muted-foreground">
           <div>
-            عرض <span className="font-semibold text-foreground">{filteredOrders.length}</span> من أصل <span className="font-semibold text-foreground">{orders.length}</span> طلب
+            عرض <span className="font-bold text-foreground font-mono">{filteredOrders.length}</span> من أصل{" "}
+            <span className="font-bold text-foreground font-mono">{orders.length}</span> طلب
           </div>
           <div className="font-medium text-foreground">
-            إجمالي مبيعات النتائج: <span className="text-primary font-bold">{currency === "IQD" ? formatIQD(filteredTotalAmount) : formatPrice(filteredTotalAmount, currency)}</span>
+            إجمالي مبيعات النتائج: <span className="text-primary font-mono font-bold">{renderMoney(filteredTotalAmount)}</span>
           </div>
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-border bg-card">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-right text-muted-foreground">
-                <th className="whitespace-nowrap px-5 py-3 font-medium">الطلب</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">العميل</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">القناة</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">المحافظة</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">العنوان</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">المبلغ ({currency === "USD" ? "$" : "د.ع"})</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">الحالة</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium">التاريخ</th>
-                <th className="whitespace-nowrap px-5 py-3 font-medium text-center">الإجراءات</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">الطلب</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">العميل</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">القناة</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">المحافظة</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">العنوان</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">المبلغ ({currency === "USD" ? "$" : "د.ع"})</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">الحالة</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">التاريخ</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold text-center">الإجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -273,32 +290,32 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                 const customerName = o.customer || "زبون"
                 const amountVal = o.amount || 0
                 return (
-                  <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/40">
-                    <td className="whitespace-nowrap px-5 py-3.5 font-medium">{o.id}</td>
-                    <td className="whitespace-nowrap px-5 py-3.5">
-                      <div className="font-semibold">{customerName}</div>
-                      <div className="text-xs text-muted-foreground">{o.phone}</div>
+                  <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-foreground">{o.id}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <div className="font-bold text-foreground">{customerName}</div>
+                      <div className="text-[11px] font-mono text-muted-foreground">{o.phone}</div>
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3.5 text-muted-foreground">{o.channel}</td>
-                    <td className="whitespace-nowrap px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                        <MapPin className="h-3 w-3 text-muted-foreground" />
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{o.channel}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
                         {o.governorate}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-muted-foreground">
+                    <td className="px-4 py-3 text-muted-foreground max-w-xs truncate">
                       {o.city}
                       {o.street ? ` — ${o.street}` : ""}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3.5 font-semibold text-foreground">
-                      {currency === "IQD" ? formatIQD(amountVal) : formatPrice(amountVal, currency)}
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-foreground">
+                      {renderMoney(amountVal)}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3.5">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-2">
                         <select
                           value={o.status}
                           onChange={(e) => updateOrderStatus(o.id, e.target.value as OrderStatus)}
-                          className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground shadow-sm focus:border-ring outline-none cursor-pointer"
+                          className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground shadow-xs focus:border-primary outline-none cursor-pointer"
                         >
                           {orderStatuses.map((status) => (
                             <option key={status} value={status}>
@@ -309,8 +326,8 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                         <OrderStatusBadge status={o.status} />
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3.5 text-muted-foreground">{o.date}</td>
-                    <td className="whitespace-nowrap px-5 py-3.5">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground font-mono">{o.date}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center justify-center gap-1 relative z-10">
                         <button
                           type="button"
@@ -337,7 +354,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
           </table>
         </div>
         {filteredOrders.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground space-y-2">
+          <div className="py-12 text-center text-xs text-muted-foreground space-y-2">
             <p className="font-medium">لا توجد طلبات مطابقة لفلاتر البحث الحالية</p>
             <button
               onClick={() => {
@@ -345,7 +362,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                 setSelectedStatus("الكل")
                 setQuery("")
               }}
-              className="text-xs text-primary underline"
+              className="text-xs text-primary underline cursor-pointer"
             >
               إلغاء التصفية ورؤية كل الطلبات
             </button>
@@ -353,47 +370,50 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
         ) : null}
       </section>
 
+      {/* مودال تعديل الطلب */}
       {editingOrder && (
         <Modal title={`تعديل الطلب ${editingOrder.id}`} onClose={() => setEditingOrder(null)}>
-          <form onSubmit={handleSaveEdit} className="space-y-4 pt-2">
+          <form onSubmit={handleSaveEdit} className="space-y-4 pt-2 text-xs">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">اسم العميل</label>
+              <label className="block font-medium text-muted-foreground mb-1">اسم العميل</label>
               <input
                 type="text"
                 value={editingOrder.customer}
                 onChange={(e) => setEditingOrder({ ...editingOrder, customer: e.target.value })}
-                className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary text-foreground"
                 required
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">رقم الهاتف</label>
+                <label className="block font-medium text-muted-foreground mb-1">رقم الهاتف</label>
                 <input
                   type="text"
                   value={editingOrder.phone}
                   onChange={(e) => setEditingOrder({ ...editingOrder, phone: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs font-mono outline-none focus:border-primary text-foreground"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">المبلغ (د.ع)</label>
+                <label className="block font-medium text-muted-foreground mb-1">
+                  المبلغ ({currency === "IQD" ? "د.ع" : "$"})
+                </label>
                 <input
                   type="number"
                   value={editingOrder.amount}
                   onChange={(e) => setEditingOrder({ ...editingOrder, amount: Number(e.target.value) })}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs font-mono outline-none focus:border-primary text-foreground"
                   required
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">المحافظة</label>
+                <label className="block font-medium text-muted-foreground mb-1">المحافظة</label>
                 <select
                   value={editingOrder.governorate}
                   onChange={(e) => setEditingOrder({ ...editingOrder, governorate: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary cursor-pointer text-foreground"
                 >
                   {IRAQ_GOVERNORATES.map((gov) => (
                     <option key={gov.id} value={gov.name}>
@@ -403,33 +423,36 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">المدينة / المنطقة</label>
+                <label className="block font-medium text-muted-foreground mb-1">المدينة / المنطقة</label>
                 <input
                   type="text"
                   value={editingOrder.city}
                   onChange={(e) => setEditingOrder({ ...editingOrder, city: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">تفاصيل الشارع / العنوان</label>
+              <label className="block font-medium text-muted-foreground mb-1">تفاصيل الشارع / العنوان</label>
               <input
                 type="text"
                 value={editingOrder.street || ""}
                 onChange={(e) => setEditingOrder({ ...editingOrder, street: e.target.value })}
-                className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-ring"
+                className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary text-foreground"
               />
             </div>
             <div className="flex justify-end gap-2 pt-3 border-t border-border">
               <button
                 type="button"
                 onClick={() => setEditingOrder(null)}
-                className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                className="rounded-lg border border-border px-4 py-2 font-medium hover:bg-muted cursor-pointer"
               >
                 إلغاء
               </button>
-              <button type="submit" className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90">
+              <button
+                type="submit"
+                className="rounded-lg bg-primary text-primary-foreground px-4 py-2 font-bold hover:opacity-90 cursor-pointer"
+              >
                 حفظ التعديلات
               </button>
             </div>
@@ -437,22 +460,23 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
         </Modal>
       )}
 
+      {/* مودال تأكيد الحذف */}
       {deletingId && (
         <Modal title="تأكيد حذف الطلب" onClose={() => setDeletingId(null)}>
-          <div className="space-y-4 pt-2 text-center">
-            <p className="text-sm text-muted-foreground">
-              هل أنت تأكد من رغبتك في حذف الطلب رقم <span className="font-bold text-foreground">{deletingId}</span>؟ لا يمكن التراجع عن هذا الإجراء بعد الحذف.
+          <div className="space-y-4 pt-2 text-center text-xs">
+            <p className="text-muted-foreground leading-relaxed">
+              هل أنت تأكد من رغبتك في حذف الطلب رقم <span className="font-bold font-mono text-foreground">{deletingId}</span>؟ لا يمكن التراجع عن هذا الإجراء بعد الحذف.
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <button
                 onClick={() => setDeletingId(null)}
-                className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                className="rounded-lg border border-border px-4 py-2 font-medium hover:bg-muted cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 onClick={handleConfirmDelete}
-                className="rounded-lg bg-destructive text-destructive-foreground px-4 py-2 text-sm font-medium hover:bg-destructive/90"
+                className="rounded-lg bg-destructive text-destructive-foreground px-4 py-2 font-bold hover:opacity-90 cursor-pointer"
               >
                 تأكيد الحذف
               </button>
@@ -461,6 +485,7 @@ export function OrdersView({ onCreate }: { onCreate?: boolean }) {
         </Modal>
       )}
 
+      {/* مودال إنشاء طلب جديد */}
       {open ? (
         <Modal title="طلب جديد داخل العراق" onClose={() => setOpen(false)}>
           <OrderForm onDone={() => setOpen(false)} />

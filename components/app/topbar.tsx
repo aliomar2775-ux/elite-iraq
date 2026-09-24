@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Search,
   Bell,
@@ -20,6 +20,9 @@ import {
 } from "lucide-react"
 import { useApp } from "@/lib/app-state"
 import { useTranslation } from "@/lib/dictionary"
+import type { Order, Product } from "@/lib/data"
+import { formatIQD } from "@/lib/iraq"
+import { formatPrice } from "@/lib/utils"
 
 type NotificationItem = {
   id: string
@@ -52,6 +55,7 @@ export function Topbar({
     language,
     orders = [],
     products = [],
+    currency,
     navigateTo: appNavigateTo,
     setActiveTab,
     globalSearchQuery,
@@ -75,8 +79,13 @@ export function Topbar({
   // عداد الإشعارات غير المقروءة
   const unreadCount = notifications.filter((n) => !n.read).length
 
-  // تبديل الثيم الداكن والنهاري
-  const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light")
+  // دالة موحدة لتنسيق المبالغ المالي
+  const renderMoney = useCallback(
+    (amount: number) => {
+      return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+    },
+    [currency]
+  )
 
   // 🎯 دالة ملاحة مركزية موحدة
   const navigateTo = (tabName: string, searchFilter: string = "") => {
@@ -138,16 +147,16 @@ export function Topbar({
 
   const activeQuery = globalSearchQuery || ""
 
-  // فلترة نتائج البحث الحية
+  // فلترة نتائج البحث الحية بدون any
   const filteredProducts = activeQuery.trim() && Array.isArray(products)
-    ? products.filter((p) => p?.name?.toLowerCase().includes(activeQuery.toLowerCase()))
+    ? products.filter((p: Product) => p?.name?.toLowerCase().includes(activeQuery.toLowerCase()))
     : []
 
   const filteredOrders = activeQuery.trim() && Array.isArray(orders)
-    ? orders.filter((o: any) => {
+    ? orders.filter((o: Order) => {
         const q = activeQuery.toLowerCase()
         const id = (o?.id || "").toLowerCase()
-        const name = (o?.customerName || o?.customer || "").toLowerCase()
+        const name = (o?.customer || "").toLowerCase()
         const phone = o?.phone || ""
         return id.includes(q) || name.includes(q) || phone.includes(q)
       })
@@ -167,11 +176,11 @@ export function Topbar({
   }, [])
 
   return (
-    <header className="sticky top-0 z-50 flex h-16 w-full items-center justify-between border-b border-border bg-background/90 px-4 sm:px-6 backdrop-blur-md rtl" ref={dropdownRef}>
+    <header className="sticky top-0 z-50 flex h-16 w-full items-center justify-between border-b border-border bg-background/90 px-4 sm:px-6 backdrop-blur-md rtl text-foreground" ref={dropdownRef}>
       {/* زر القائمة للشاشات الصغيرة */}
       <button
         onClick={onMenu}
-        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-muted-foreground md:hidden"
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-muted-foreground md:hidden cursor-pointer hover:bg-muted transition-colors"
         aria-label="فتح القائمة"
       >
         <Menu className="h-5 w-5" />
@@ -193,7 +202,7 @@ export function Topbar({
               if (activeQuery.trim().length > 0) setShowSearchResults(true)
             }}
             placeholder={t("searchPlaceholder") || "ابحث عن منتج، طلب، أو عميل..."}
-            className="h-9 w-full rounded-xl border border-border bg-muted/40 pr-9 pl-8 text-xs outline-none transition-all placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary"
+            className="h-9 w-full rounded-xl border border-border bg-muted/30 pr-9 pl-8 text-xs outline-none transition-all placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary text-foreground"
           />
           {activeQuery && (
             <button
@@ -201,7 +210,7 @@ export function Topbar({
                 if (setGlobalSearchQuery) setGlobalSearchQuery("")
                 setShowSearchResults(false)
               }}
-              className="absolute left-2.5 text-muted-foreground hover:text-foreground"
+              className="absolute left-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -210,7 +219,7 @@ export function Topbar({
 
         {/* نتائج البحث المباشرة */}
         {showSearchResults && activeQuery.trim().length > 0 && (
-          <div className="absolute top-11 right-0 left-0 z-50 max-h-80 overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-2xl text-right">
+          <div className="absolute top-11 right-0 left-0 z-50 max-h-80 overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-2xl text-right animate-in zoom-in-95 duration-150">
             {filteredProducts.length === 0 && filteredOrders.length === 0 ? (
               <p className="p-4 text-center text-xs text-muted-foreground">لا توجد نتائج مطابقة لبحثك.</p>
             ) : (
@@ -218,7 +227,7 @@ export function Topbar({
                 {filteredProducts.length > 0 && (
                   <div>
                     <p className="mb-1 text-[11px] font-bold text-muted-foreground flex items-center gap-1">
-                      <ShoppingBag className="h-3.5 w-3.5 text-primary" /> المنتجات المطابقة:
+                      <ShoppingBag className="h-3.5 w-3.5 text-primary shrink-0" /> المنتجات المطابقة:
                     </p>
                     <div className="space-y-1">
                       {filteredProducts.map((p) => (
@@ -227,8 +236,8 @@ export function Topbar({
                           onClick={() => handleSelectProduct(p.name)}
                           className="flex items-center justify-between rounded-lg p-2.5 hover:bg-primary/10 transition-colors cursor-pointer text-xs border border-transparent hover:border-primary/20"
                         >
-                          <span className="font-semibold text-foreground">{p.name}</span>
-                          <span className="text-primary font-mono">{p.price?.toLocaleString("ar-IQ")} د.ع</span>
+                          <span className="font-bold text-foreground">{p.name}</span>
+                          <span className="text-primary font-mono font-bold">{renderMoney(p.price || 0)}</span>
                         </div>
                       ))}
                     </div>
@@ -238,13 +247,12 @@ export function Topbar({
                 {filteredOrders.length > 0 && (
                   <div>
                     <p className="mb-1 text-[11px] font-bold text-muted-foreground flex items-center gap-1">
-                      <MessageSquare className="h-3.5 w-3.5 text-emerald-500" /> الطلبات والعملاء:
+                      <MessageSquare className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> الطلبات والعملاء:
                     </p>
                     <div className="space-y-1">
-                      {filteredOrders.map((o: any) => {
-                        const orderTotal = o.totalAmount || o.amount || o.total || 0;
-                        const amountStr = typeof orderTotal === "number" ? `${orderTotal.toLocaleString("ar-IQ")} د.ع` : orderTotal;
-                        const targetVal = o.id || o.customerName || o.customer || "";
+                      {filteredOrders.map((o) => {
+                        const orderTotal = o.amount || 0
+                        const targetVal = o.id || o.customer || ""
                         return (
                           <div
                             key={o.id}
@@ -252,10 +260,10 @@ export function Topbar({
                             className="flex items-center justify-between rounded-lg p-2.5 hover:bg-emerald-500/10 transition-colors cursor-pointer text-xs border border-transparent hover:border-emerald-500/20"
                           >
                             <div>
-                              <p className="font-bold">{o.customerName || o.customer || "زبون"} ({o.id})</p>
-                              <p className="text-[10px] text-muted-foreground">{o.phone || ""} {o.governorate ? `· ${o.governorate}` : ""}</p>
+                              <p className="font-bold text-foreground">{o.customer || "زبون"} ({o.id})</p>
+                              <p className="text-[10px] text-muted-foreground font-mono">{o.phone || ""} {o.governorate ? `· ${o.governorate}` : ""}</p>
                             </div>
-                            <span className="text-xs font-bold text-emerald-500">{amountStr}</span>
+                            <span className="text-xs font-bold font-mono text-emerald-500">{renderMoney(orderTotal)}</span>
                           </div>
                         )
                       })}
@@ -273,11 +281,20 @@ export function Topbar({
         {/* زر القنوات المربوطة */}
         <button
           onClick={() => navigateTo("channels")}
-          className="hidden md:flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-semibold hover:border-primary/40 hover:bg-muted/60 transition-all cursor-pointer"
+          className="hidden md:flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-semibold hover:border-primary/40 hover:bg-muted/60 transition-all cursor-pointer text-foreground"
           title="إدارة القنوات المربوطة"
         >
           <Radio className="h-3.5 w-3.5 text-primary animate-pulse" />
           <span>{connectedCount} {t("connectedChannels") || "قنوات مربوطة"}</span>
+        </button>
+
+        {/* زر تبديل الوضع الداكن/النهاري السريع */}
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-muted/30 hover:bg-muted/60 transition-all text-muted-foreground hover:text-foreground cursor-pointer"
+          title={theme === "dark" ? "الوضع النهاري" : "الوضع الداكن"}
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
         </button>
 
         {/* زر الإشعارات */}
@@ -300,10 +317,10 @@ export function Topbar({
           </button>
 
           {showNotifications && (
-            <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-3 shadow-2xl z-50 text-xs text-right">
-              <div className="flex items-center justify-between border-b border-border pb-2.5 mb-2">
+            <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-3 shadow-2xl z-50 text-xs text-right animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-2">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-xs">الإشعارات والتنبيهات</h3>
+                  <h3 className="font-bold text-xs text-foreground">الإشعارات والتنبيهات</h3>
                   {unreadCount > 0 && (
                     <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
                       {unreadCount} غير مقروء
@@ -373,35 +390,35 @@ export function Topbar({
             </div>
             <div className="hidden text-right leading-tight sm:block">
               <p className="text-xs font-bold text-foreground">{merchant?.storeName || "متجرك"}</p>
-              <p className="text-[10px] text-muted-foreground">خطة {merchant?.plan || "النمو"}</p>
+              <p className="text-[10px] text-muted-foreground font-medium">خطة {merchant?.plan || "النمو"}</p>
             </div>
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
 
           {showProfileMenu && (
-            <div className="absolute left-0 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl z-50 text-xs space-y-1 text-right">
-              <div className="p-2 border-b border-border mb-1">
-                <p className="font-bold text-sm">{merchant?.storeName || "متجر لمسة"}</p>
+            <div className="absolute left-0 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl z-50 text-xs space-y-1 text-right animate-in zoom-in-95 duration-150">
+              <div className="p-2 border-b border-border/60 mb-1">
+                <p className="font-bold text-sm text-foreground">{merchant?.storeName || "متجر لمسة"}</p>
                 <p className="text-[10px] text-muted-foreground font-mono mt-0.5">Tenant ID: ws_iq_8921</p>
               </div>
 
               <button
                 onClick={() => navigateTo("billing")}
-                className="flex w-full items-center gap-2 rounded-lg p-2.5 hover:bg-primary/10 hover:text-primary text-right transition-colors font-semibold cursor-pointer"
+                className="flex w-full items-center gap-2 rounded-lg p-2.5 hover:bg-primary/10 hover:text-primary text-right transition-colors font-semibold cursor-pointer text-foreground"
               >
-                <Building2 className="h-4 w-4 text-primary" />
+                <Building2 className="h-4 w-4 text-primary shrink-0" />
                 <span>إدارة الاشتراك والتوكنات</span>
               </button>
 
               <button
                 onClick={() => navigateTo("settings")}
-                className="flex w-full items-center gap-2 rounded-lg p-2.5 hover:bg-emerald-500/10 hover:text-emerald-500 text-right transition-colors font-semibold cursor-pointer"
+                className="flex w-full items-center gap-2 rounded-lg p-2.5 hover:bg-emerald-500/10 hover:text-emerald-500 text-right transition-colors font-semibold cursor-pointer text-foreground"
               >
-                <Store className="h-4 w-4 text-emerald-500" />
+                <Store className="h-4 w-4 text-emerald-500 shrink-0" />
                 <span>إعدادات المتجر والعناوين</span>
               </button>
 
-              <div className="border-t border-border pt-1 mt-1">
+              <div className="border-t border-border/60 pt-1 mt-1">
                 <button
                   onClick={() => {
                     setShowProfileMenu(false)
@@ -409,7 +426,7 @@ export function Topbar({
                   }}
                   className="flex w-full items-center gap-2 rounded-lg p-2.5 hover:bg-destructive/15 text-destructive text-right font-bold transition-colors cursor-pointer"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-4 w-4 shrink-0" />
                   <span>تسجيل الخروج</span>
                 </button>
               </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import { Camera, MessageCircle, Unplug, ShieldCheck, Video, Ghost, CheckCircle2, AlertCircle } from "lucide-react"
 import { useApp, type ChannelId } from "@/lib/app-state"
@@ -30,7 +30,7 @@ function ChannelsContent() {
   const [otpCode, setOtpCode] = useState("")
   const [pendingPhone, setPendingPhone] = useState("")
 
-  // 🎯 حالة النافذة المنبثقة التابعة للمشروع بدلاً من تنبيهات المتصفح
+  // حالة النافذة المنبثقة للتنبيهات المخصصة بالمنصة
   const [notificationModal, setNotificationModal] = useState<{
     open: boolean
     title: string
@@ -43,9 +43,18 @@ function ChannelsContent() {
     type: "success",
   })
 
-  const showAlertModal = (title: string, message: string, type: "success" | "warning" | "error" = "success") => {
+  const showAlertModal = useCallback((title: string, message: string, type: "success" | "warning" | "error" = "success") => {
     setNotificationModal({ open: true, title, message, type })
-  }
+  }, [])
+
+  // دالة تصفير حالات الإدخال المؤقتة عند إغلاق أو تغيير القناة
+  const resetEditingState = useCallback(() => {
+    setEditing(null)
+    setHandle("")
+    setOtpCode("")
+    setPendingPhone("")
+    setStep("input")
+  }, [])
 
   useEffect(() => {
     const success = searchParams.get("success")
@@ -57,13 +66,13 @@ function ChannelsContent() {
       if (typeof window !== "undefined") {
         window.history.replaceState({}, document.title, "/channels")
       }
-      showAlertModal("تم الربط بنجاح", `تم ربط حساب إنستغرام (${connectedHandle}) بنجاح! `, "success")
+      showAlertModal("تم الربط بنجاح", `تم ربط حساب إنستغرام (${connectedHandle}) بنجاح!`, "success")
     }
-  }, [searchParams, connectChannel])
+  }, [searchParams, connectChannel, showAlertModal])
 
   const handleConnectInstagram = () => {
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || "2161207951410525"
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://bolt-project-access-pearl.vercel.app"
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
     const redirectUri = `${origin}/api/instagram`
 
     const instagramOAuthUrl = `https://api.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${encodeURIComponent(
@@ -96,33 +105,35 @@ function ChannelsContent() {
           const isInstagram = channel.id === "instagram"
 
           return (
-            <section key={channel.id} className="rounded-xl border border-border bg-card p-5">
+            <section key={channel.id} className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary shrink-0">
                     {getChannelIcon(channel.id)}
                   </span>
                   <div>
-                    <h2 className="font-semibold">{meta.title}</h2>
-                    <p className="text-sm text-muted-foreground">{meta.hint}</p>
+                    <h2 className="font-semibold text-foreground">{meta.title}</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">{meta.hint}</p>
                   </div>
                 </div>
                 <span
                   className={cn(
-                    "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                    channel.connected ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-bold shrink-0",
+                    channel.connected ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"
                   )}
                 >
-                  {channel.connected ? "متصل" : "غير متصل"}
+                  {channel.connected ? "متصل 🟢" : "غير متصل"}
                 </span>
               </div>
 
               {channel.connected ? (
-                <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium">
-                    {isWhatsapp ? "الرقم المربوط:" : "الحساب:"} {channel.handle}
+                <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3 text-xs">
+                  <p className="font-bold text-foreground">
+                    {isWhatsapp ? "الرقم المربوط:" : "الحساب:"} <span className="font-mono text-primary">{channel.handle}</span>
                   </p>
-                  <p className="text-xs text-muted-foreground">الرد التلقائي: مفعل 🟢 | تاريخ الربط: {channel.connectedAt}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    الرد التلقائي: مفعل | تاريخ الربط: {channel.connectedAt || "مؤخراً"}
+                  </p>
                 </div>
               ) : null}
 
@@ -156,19 +167,19 @@ function ChannelsContent() {
                         value={handle}
                         onChange={(e) => setHandle(e.target.value)}
                         placeholder={meta.placeholder}
-                        className="h-10 w-full rounded-lg border border-border bg-muted/40 px-3 text-sm outline-none focus:border-ring focus:bg-background"
+                        className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none transition-colors focus:border-ring focus:bg-background"
                       />
                       <div className="flex gap-2">
-                        <button type="submit" className="h-10 flex-1 rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+                        <button
+                          type="submit"
+                          className="h-10 flex-1 rounded-lg bg-primary text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
+                        >
                           إرسال رمز التأكيد
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditing(null)
-                            setStep("input")
-                          }}
-                          className="h-10 rounded-lg border border-border px-4 text-sm"
+                          onClick={resetEditingState}
+                          className="h-10 rounded-lg border border-border px-4 text-xs font-semibold text-muted-foreground hover:bg-muted cursor-pointer"
                         >
                           إلغاء
                         </button>
@@ -180,7 +191,7 @@ function ChannelsContent() {
                     <form
                       onSubmit={(e) => {
                         e.preventDefault()
-                        if (otpCode !== "1234") {
+                        if (otpCode.trim() !== "1234") {
                           showAlertModal(
                             "رمز خاطئ",
                             "رمز التأكيد غير صحيح! استخدم الرمز التجريبي: 1234",
@@ -189,21 +200,18 @@ function ChannelsContent() {
                           return
                         }
                         connectChannel(channel.id, pendingPhone)
-                        setEditing(null)
-                        setStep("input")
-                        setHandle("")
-                        setOtpCode("")
+                        resetEditingState()
                         showAlertModal(
                           "تم التفعيل بنجاح",
-                          "تم ربط رقم الواتساب وتفعيل الرد التلقائي بنجاح تام! ",
+                          "تم ربط رقم الواتساب وتفعيل الرد التلقائي بنجاح تام!",
                           "success"
                         )
                       }}
                       className="space-y-3"
                     >
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 p-2 rounded-md">
-                        <ShieldCheck className="h-4 w-4 text-primary" />
-                        <span>أدخل رمز التأكيد المرسل إلى الرقم: {pendingPhone}</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 p-2 rounded-md border border-primary/10">
+                        <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                        <span>أدخل رمز التأكيد المرسل إلى الرقم: <strong className="font-mono text-foreground">{pendingPhone}</strong></span>
                       </div>
                       <input
                         required
@@ -211,13 +219,20 @@ function ChannelsContent() {
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value)}
                         placeholder="أدخل رمز الـ OTP (مثال: 1234)"
-                        className="h-10 w-full text-center tracking-widest font-bold rounded-lg border border-border bg-muted/40 px-3 text-sm outline-none focus:border-ring focus:bg-background"
+                        className="h-10 w-full text-center tracking-widest font-mono font-bold rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none focus:border-ring focus:bg-background"
                       />
                       <div className="flex gap-2">
-                        <button type="submit" className="h-10 flex-1 rounded-lg bg-success text-sm font-semibold text-white">
+                        <button
+                          type="submit"
+                          className="h-10 flex-1 rounded-lg bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+                        >
                           تحقيق وتفعيل الرد التلقائي
                         </button>
-                        <button type="button" onClick={() => setStep("input")} className="h-10 rounded-lg border border-border px-4 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setStep("input")}
+                          className="h-10 rounded-lg border border-border px-4 text-xs font-semibold text-muted-foreground hover:bg-muted cursor-pointer"
+                        >
                           رجوع
                         </button>
                       </div>
@@ -234,11 +249,10 @@ function ChannelsContent() {
                       e.preventDefault()
                       if (!handle.trim()) return
                       connectChannel(channel.id, handle.trim())
-                      setEditing(null)
-                      setHandle("")
+                      resetEditingState()
                       showAlertModal(
                         "تم ربط القناة",
-                        `تم ربط حساب ${meta.title} (${handle.trim()}) بنجاح! `,
+                        `تم ربط حساب ${meta.title} (${handle.trim()}) بنجاح!`,
                         "success"
                       )
                     }}
@@ -249,19 +263,19 @@ function ChannelsContent() {
                       value={handle}
                       onChange={(e) => setHandle(e.target.value)}
                       placeholder={meta.placeholder}
-                      className="h-10 w-full rounded-lg border border-border bg-muted/40 px-3 text-sm outline-none focus:border-ring focus:bg-background"
+                      className="h-10 w-full rounded-lg border border-border bg-muted/30 px-3 text-sm outline-none transition-colors focus:border-ring focus:bg-background"
                     />
                     <div className="flex gap-2">
-                      <button type="submit" className="h-10 flex-1 rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+                      <button
+                        type="submit"
+                        className="h-10 flex-1 rounded-lg bg-primary text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
+                      >
                         حفظ وربط القناة
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditing(null)
-                          setHandle("")
-                        }}
-                        className="h-10 rounded-lg border border-border px-4 text-sm"
+                        onClick={resetEditingState}
+                        className="h-10 rounded-lg border border-border px-4 text-xs font-semibold text-muted-foreground hover:bg-muted cursor-pointer"
                       >
                         إلغاء
                       </button>
@@ -283,7 +297,7 @@ function ChannelsContent() {
                         if (isWhatsapp) setStep("input")
                       }
                     }}
-                    className="h-10 flex-1 rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
+                    className="h-10 flex-1 rounded-lg bg-primary text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
                   >
                     {channel.connected ? "تحديث الربط" : "ربط المتجر"}
                   </button>
@@ -294,7 +308,7 @@ function ChannelsContent() {
                         setEditing(channel.id)
                         setHandle(channel.handle || "")
                       }}
-                      className="h-10 rounded-lg border border-border px-3 text-xs text-muted-foreground hover:bg-muted"
+                      className="h-10 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                       title="ربط يدوي بحساب إنستغرام"
                     >
                       ربط يدوي
@@ -304,7 +318,7 @@ function ChannelsContent() {
                   {channel.connected ? (
                     <button
                       onClick={() => disconnectChannel(channel.id)}
-                      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-sm text-muted-foreground hover:text-destructive"
+                      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                     >
                       <Unplug className="h-4 w-4" />
                       فصل
@@ -317,7 +331,7 @@ function ChannelsContent() {
         })}
       </div>
 
-      {/*  النافذة المنبثقة التابعة للمشروع بدلاً من alert المتصفح */}
+      {/* النافذة المنبثقة التابعة للمشروع بدلاً من alert المتصفح */}
       {notificationModal.open && (
         <Modal title={notificationModal.title} onClose={() => setNotificationModal((prev) => ({ ...prev, open: false }))}>
           <div className="space-y-4 pt-2 text-center">
@@ -332,7 +346,7 @@ function ChannelsContent() {
             <div className="pt-2">
               <button
                 onClick={() => setNotificationModal((prev) => ({ ...prev, open: false }))}
-                className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-bold hover:bg-primary/90 transition-colors"
+                className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
               >
                 موافق
               </button>
@@ -346,7 +360,7 @@ function ChannelsContent() {
 
 export function ChannelsView() {
   return (
-    <Suspense fallback={<div className="p-6 text-center text-sm text-muted-foreground">جارٍ تحميل القنوات...</div>}>
+    <Suspense fallback={<div className="p-6 text-center text-xs text-muted-foreground">جارٍ تحميل القنوات...</div>}>
       <ChannelsContent />
     </Suspense>
   )

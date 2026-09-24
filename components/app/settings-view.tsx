@@ -27,6 +27,17 @@ import { useApp } from "@/lib/app-state"
 import { cn } from "@/lib/utils"
 import { sendTelegramMessage } from "@/lib/integrations"
 
+interface OrderExportRow {
+  id: string
+  customerName?: string
+  customer?: string
+  phone?: string
+  governorate?: string
+  totalAmount?: number
+  amount?: number
+  status?: string
+}
+
 export function SettingsView() {
   const { merchant, theme, setTheme, updateMerchant, orders = [] } = useApp()
   const merchantEmail = (merchant as { email?: string } | null | undefined)?.email
@@ -34,31 +45,28 @@ export function SettingsView() {
 
   const [saved, setSaved] = useState(false)
 
-  // 1️⃣ بيانات المتجر والتاجر الكاملة (مربوطة بـ Context النظام)
+  // 1️⃣ بيانات المتجر والتاجر الكاملة
   const [storeName, setStoreName] = useState(merchant?.storeName ?? "متجر لمسة")
   const [ownerName, setOwnerName] = useState(merchantOwnerName ?? "نورالدين الدليمي")
   const [phone, setPhone] = useState(merchant?.phone ?? "07701230000")
   const [email, setEmail] = useState(merchantEmail ?? "store@example.com")
   const [address, setAddress] = useState<string>(
-    typeof merchant?.address === "string" ? merchant.address : "بغداد - الكرادة",
+    typeof merchant?.address === "string" ? merchant.address : "بغداد - الكرادة"
   )
 
-  // 2️⃣ مركز التنبيهات والإشعارات الفورية (مفعلة بالكامل)
+  // 2️⃣ مركز التنبيهات والإشعارات الفورية
   const [emailNewOrder, setEmailNewOrder] = useState(true)
   const [soundNotification, setSoundNotification] = useState(true)
   const [whatsappMerchantAlert, setWhatsappMerchantAlert] = useState(true)
   const [highRiskAlert, setHighRiskAlert] = useState(true)
 
-  // 3️⃣ الميزات المتقدمة المجهزة للربط بالمفاتيح (مفعلة افتراضياً)
-
-  // 🎯 الميزة 1: ربط بوت تليجرام للإشعارات الفورية
+  // 3️⃣ الميزات المتقدمة والأتمتة
   const [telegramSettings, setTelegramSettings] = useState({
     enabled: true,
     botToken: "718293849:AAEgX...",
     chatId: "@my_store_orders",
   })
 
-  // 🎯 الميزة 2: ساعات العمل والرد التلقائي
   const [businessHours, setBusinessHours] = useState({
     enabled: true,
     startTime: "10:00",
@@ -67,13 +75,11 @@ export function SettingsView() {
       "أهلاً بك عيوني! المتجر مغلق حالياً، أوقات عملنا الرسمية من 10:00 صباحاً إلى 11:00 مساءً. تم تسجيل طلبك وسنقوم بالرد عليك فور بدء الدوام 🌸",
   })
 
-  // 🎯 الميزة 3: النسخ الاحتياطي وتصدير البيانات
   const [autoBackup, setAutoBackup] = useState({
     enabled: true,
     frequency: "weekly",
   })
 
-  // 🎯 الميزة 4: نظام حظر الحسابات والسبام
   const [antiSpam, setAntiSpam] = useState({
     enabled: true,
     blockedNumbers: "07700000000, 07800000000",
@@ -93,10 +99,15 @@ export function SettingsView() {
     }
   }, [merchant, merchantEmail, merchantOwnerName])
 
-  // 🔔 تشغيل الصوت التنبيهي للمتصفح
+  // 🔔 تشغيل الصوت التنبيهي للمتصفح بدون any
   const playSoundEffect = () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (!AudioContextClass) return
+
+      const audioCtx = new AudioContextClass()
       const osc = audioCtx.createOscillator()
       const gain = audioCtx.createGain()
       osc.type = "sine"
@@ -106,29 +117,31 @@ export function SettingsView() {
       gain.connect(audioCtx.destination)
       osc.start()
       osc.stop(audioCtx.currentTime + 0.2)
-    } catch (e) {
+    } catch {
       console.log("Audio play policy restriction")
     }
   }
 
-  // 📊 تصدير ملف البيانات حقيقياً للتحميل المباشر
-  const handleExportData = (type: "excel" | "csv") => {
-    const dataRows = orders.length > 0 ? orders : [
-      { id: "1084", customerName: "علي حسين", phone: "07701234567", governorate: "بغداد", totalAmount: 45000, status: "مؤكد" },
-      { id: "1085", customerName: "سيف السلام", phone: "07809876543", governorate: "ديالى", totalAmount: 32000, status: "قيد التجهيز" },
-    ]
+  // 📊 تصدير ملف البيانات للتحميل المباشر
+  const handleExportData = () => {
+    const dataRows: OrderExportRow[] =
+      orders.length > 0
+        ? orders
+        : [
+            { id: "1084", customerName: "علي حسين", phone: "07701234567", governorate: "بغداد", totalAmount: 45000, status: "مؤكد" },
+            { id: "1085", customerName: "سيف السلام", phone: "07809876543", governorate: "ديالى", totalAmount: 32000, status: "قيد التجهيز" },
+          ]
 
-    let content = ""
-    const headers = ["رقم الطلب", "اسم الزبون", "رقم الهاتف", "المافظة", "المبلغ الكلي", "الحالة"]
-    const rows = dataRows.map((o: any) => [
+    const headers = ["رقم الطلب", "اسم الزبون", "رقم الهاتف", "المحافظة", "المبلغ الكلي", "الحالة"]
+    const rows = dataRows.map((o) => [
       o.id,
-      `"${o.customerName || o.customer || ''}"`,
-      `"${o.phone || ''}"`,
-      `"${o.governorate || ''}"`,
+      `"${o.customerName || o.customer || ""}"`,
+      `"${o.phone || ""}"`,
+      `"${o.governorate || ""}"`,
       o.totalAmount || o.amount || 0,
-      `"${o.status || 'مؤكد'}"`,
+      `"${o.status || "مؤكد"}"`,
     ])
-    content = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const content = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
 
     const blob = new Blob([content], { type: "text/csv;charset=utf-8;" })
     const url = URL.createObjectURL(blob)
@@ -144,13 +157,14 @@ export function SettingsView() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // 1. تحديث كافة بيانات التاجر والإعدادات في Context المنصة
     updateMerchant({
       storeName,
       phone,
       ownerName,
       email,
-      address,
+      address: typeof merchant?.address === "object" && merchant?.address !== null
+        ? { ...merchant.address, details: address }
+        : (address as unknown as any),
       notifications: {
         emailNewOrder,
         soundNotification,
@@ -163,12 +177,10 @@ export function SettingsView() {
       antiSpam,
     } as any)
 
-    // 2. تشغيل الصوت في حال تفعيله
     if (soundNotification) {
       playSoundEffect()
     }
 
-    // 3. 🚀 إرسال إشعار تلقائي عبر خدمة تليجرام عند توفر المفاتيح
     if (telegramSettings.enabled && telegramSettings.botToken && telegramSettings.chatId) {
       await sendTelegramMessage(
         {
@@ -184,10 +196,10 @@ export function SettingsView() {
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-4xl pb-12 rtl">
+    <form onSubmit={handleSave} className="space-y-6 max-w-4xl pb-12 rtl text-foreground">
       {/* 1️⃣ تفضيلات المظهر والواجهة */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
           <Sparkles className="h-5 w-5 text-primary" />
           <h3 className="font-bold text-base text-foreground">تفضيلات المظهر والواجهة</h3>
         </div>
@@ -203,7 +215,7 @@ export function SettingsView() {
               className={cn(
                 "p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer",
                 theme === "system"
-                  ? "bg-primary/10 border-primary text-primary shadow-sm"
+                  ? "bg-primary/10 border-primary text-primary shadow-xs"
                   : "bg-background border-border text-muted-foreground hover:text-foreground"
               )}
             >
@@ -217,7 +229,7 @@ export function SettingsView() {
               className={cn(
                 "p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer",
                 theme === "dark"
-                  ? "bg-primary/10 border-primary text-primary shadow-sm"
+                  ? "bg-primary/10 border-primary text-primary shadow-xs"
                   : "bg-background border-border text-muted-foreground hover:text-foreground"
               )}
             >
@@ -231,7 +243,7 @@ export function SettingsView() {
               className={cn(
                 "p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer",
                 theme === "light"
-                  ? "bg-primary/10 border-primary text-primary shadow-sm"
+                  ? "bg-primary/10 border-primary text-primary shadow-xs"
                   : "bg-background border-border text-muted-foreground hover:text-foreground"
               )}
             >
@@ -243,9 +255,9 @@ export function SettingsView() {
       </div>
 
       {/* 2️⃣ بيانات المتجر والتاجر الكاملة */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Store className="h-5 w-5 text-emerald-400" />
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+          <Store className="h-5 w-5 text-emerald-500" />
           <h3 className="font-bold text-base text-foreground">بيانات المتجر والتاجر المعتمدة</h3>
         </div>
 
@@ -258,7 +270,7 @@ export function SettingsView() {
                 required
                 value={storeName}
                 onChange={(e) => setStoreName(e.target.value)}
-                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-sm font-bold outline-none focus:border-ring"
+                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-xs font-bold outline-none focus:border-primary text-foreground"
               />
               <Store className="h-4 w-4 text-muted-foreground absolute right-3 top-3" />
             </div>
@@ -272,7 +284,7 @@ export function SettingsView() {
                 required
                 value={ownerName}
                 onChange={(e) => setOwnerName(e.target.value)}
-                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-sm font-bold outline-none focus:border-ring"
+                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-xs font-bold outline-none focus:border-primary text-foreground"
               />
               <User className="h-4 w-4 text-muted-foreground absolute right-3 top-3" />
             </div>
@@ -286,7 +298,7 @@ export function SettingsView() {
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-sm font-mono font-bold outline-none focus:border-ring"
+                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-xs font-mono font-bold outline-none focus:border-primary text-foreground"
               />
               <Phone className="h-4 w-4 text-muted-foreground absolute right-3 top-3" />
             </div>
@@ -301,7 +313,7 @@ export function SettingsView() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-sm font-mono outline-none focus:border-ring"
+                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-xs font-mono outline-none focus:border-primary text-foreground"
               />
               <Mail className="h-4 w-4 text-muted-foreground absolute right-3 top-3" />
             </div>
@@ -316,7 +328,7 @@ export function SettingsView() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="مثال: بغداد - الكرادة - قرب نفق الشرطة"
-                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-sm outline-none focus:border-ring"
+                className="w-full h-10 rounded-lg border border-border bg-background pr-9 pl-3 text-xs outline-none focus:border-primary text-foreground"
               />
               <MapPin className="h-4 w-4 text-muted-foreground absolute right-3 top-3" />
             </div>
@@ -325,16 +337,16 @@ export function SettingsView() {
       </div>
 
       {/* 3️⃣ مركز التنبيهات والإشعارات الفورية */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Bell className="h-5 w-5 text-amber-400" />
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+          <Bell className="h-5 w-5 text-amber-500" />
           <h3 className="font-bold text-base text-foreground">التنبيهات والإشعارات</h3>
         </div>
 
         <div className="space-y-3 text-xs">
           <label className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
-              <Mail className="h-4 w-4 text-primary" />
+              <Mail className="h-4 w-4 text-primary shrink-0" />
               <div>
                 <p className="font-bold text-foreground">إرسال إشعار بريدي عند استلام طلب جديد</p>
                 <p className="text-[10px] text-muted-foreground">تصلك تفاصيل الطلب فوراً إلى البريد ({email})</p>
@@ -350,7 +362,7 @@ export function SettingsView() {
 
           <label className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
-              <Volume2 className="h-4 w-4 text-emerald-400" />
+              <Volume2 className="h-4 w-4 text-emerald-500 shrink-0" />
               <div>
                 <p className="font-bold text-foreground">إشعار صوتي فوري داخل المنصة</p>
                 <p className="text-[10px] text-muted-foreground">تشغيل صوت تنبيه عند ورود رسالة أو طلب جديد من الزبائن</p>
@@ -369,7 +381,7 @@ export function SettingsView() {
 
           <label className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
-              <Phone className="h-4 w-4 text-sky-400" />
+              <Phone className="h-4 w-4 text-sky-400 shrink-0" />
               <div>
                 <p className="font-bold text-foreground">إرسال تنبيه واتساب للتاجر فور تأكيد الطلب</p>
                 <p className="text-[10px] text-muted-foreground">رسالة واتساب تحتوي تفاصيل الطلب على رقمك ({phone})</p>
@@ -385,7 +397,7 @@ export function SettingsView() {
 
           <label className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
               <div>
                 <p className="font-bold text-foreground">تنبيه الزبائن المشبوهين والراجع العالي</p>
                 <p className="text-[10px] text-muted-foreground">إشعارك فوري أثناء المحادثة إذا كان الزبون يمتلك نسبة راجع سابقة</p>
@@ -409,10 +421,10 @@ export function SettingsView() {
         </h3>
 
         {/* 🎯 الميزة 1: ربط بوت تليجرام */}
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Send className="h-5 w-5 text-sky-400" />
+              <Send className="h-5 w-5 text-sky-400 shrink-0" />
               <div>
                 <h4 className="font-bold text-xs text-foreground">1. ربط بوت تليجرام للإشعارات الفورية (Telegram Bot)</h4>
                 <p className="text-[10px] text-muted-foreground">استلام كافة طلبات الزبائن مباشرة على قناتك أو شات التليجرام الخاص بك.</p>
@@ -431,7 +443,7 @@ export function SettingsView() {
             >
               <span
                 className={cn(
-                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-sm",
+                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-xs",
                   telegramSettings.enabled ? "right-1" : "right-6"
                 )}
               />
@@ -447,7 +459,7 @@ export function SettingsView() {
                   value={telegramSettings.botToken}
                   onChange={(e) => setTelegramSettings({ ...telegramSettings, botToken: e.target.value })}
                   placeholder="718293849:AAEgX..."
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-ring"
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
               <div>
@@ -457,7 +469,7 @@ export function SettingsView() {
                   value={telegramSettings.chatId}
                   onChange={(e) => setTelegramSettings({ ...telegramSettings, chatId: e.target.value })}
                   placeholder="@my_store_orders"
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-ring"
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
             </div>
@@ -465,10 +477,10 @@ export function SettingsView() {
         </div>
 
         {/* 🎯 الميزة 2: ساعات العمل والرد التلقائي */}
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Clock className="h-5 w-5 text-amber-400" />
+              <Clock className="h-5 w-5 text-amber-500 shrink-0" />
               <div>
                 <h4 className="font-bold text-xs text-foreground">2. ساعات العمل والرد التلقائي (Business Hours)</h4>
                 <p className="text-[10px] text-muted-foreground">تحديد أوقات الدوام الرسمية ليقوم البوت بإعلام الزبائن بالرد خارج ساعات العمل.</p>
@@ -487,7 +499,7 @@ export function SettingsView() {
             >
               <span
                 className={cn(
-                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-sm",
+                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-xs",
                   businessHours.enabled ? "right-1" : "right-6"
                 )}
               />
@@ -503,7 +515,7 @@ export function SettingsView() {
                     type="time"
                     value={businessHours.startTime}
                     onChange={(e) => setBusinessHours({ ...businessHours, startTime: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono font-bold text-xs outline-none focus:border-ring"
+                    className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono font-bold text-xs outline-none focus:border-primary text-foreground"
                   />
                 </div>
                 <div>
@@ -512,7 +524,7 @@ export function SettingsView() {
                     type="time"
                     value={businessHours.endTime}
                     onChange={(e) => setBusinessHours({ ...businessHours, endTime: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono font-bold text-xs outline-none focus:border-ring"
+                    className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono font-bold text-xs outline-none focus:border-primary text-foreground"
                   />
                 </div>
               </div>
@@ -523,7 +535,7 @@ export function SettingsView() {
                   rows={2}
                   value={businessHours.offHoursMessage}
                   onChange={(e) => setBusinessHours({ ...businessHours, offHoursMessage: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-ring leading-relaxed"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary leading-relaxed text-foreground"
                 />
               </div>
             </div>
@@ -531,10 +543,10 @@ export function SettingsView() {
         </div>
 
         {/* 🎯 الميزة 3: النسخ الاحتياطي وتصدير البيانات */}
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Database className="h-5 w-5 text-emerald-400" />
+              <Database className="h-5 w-5 text-emerald-500 shrink-0" />
               <div>
                 <h4 className="font-bold text-xs text-foreground">3. النسخ الاحتياطي وتصدير البيانات (Auto Backup & Export)</h4>
                 <p className="text-[10px] text-muted-foreground">تفعيل النسخ الاحتياطي الدوري وتصدير شيتات Excel للطلبات للشركات.</p>
@@ -553,7 +565,7 @@ export function SettingsView() {
             >
               <span
                 className={cn(
-                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-sm",
+                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-xs",
                   autoBackup.enabled ? "right-1" : "right-6"
                 )}
               />
@@ -567,7 +579,7 @@ export function SettingsView() {
                 <select
                   value={autoBackup.frequency}
                   onChange={(e) => setAutoBackup({ ...autoBackup, frequency: e.target.value })}
-                  className="h-8 px-2 rounded-lg border border-border bg-background font-bold text-xs outline-none focus:border-ring"
+                  className="h-8 px-2 rounded-lg border border-border bg-background font-bold text-xs outline-none focus:border-primary text-foreground cursor-pointer"
                 >
                   <option value="weekly">أسبوعي (تلقائي)</option>
                   <option value="monthly">شهري (تلقائي)</option>
@@ -577,8 +589,8 @@ export function SettingsView() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleExportData("excel")}
-                  className="h-8 px-3 rounded-lg bg-emerald-600 text-white font-bold text-[11px] flex items-center gap-1.5 hover:bg-emerald-500 transition-all shadow-sm cursor-pointer"
+                  onClick={handleExportData}
+                  className="h-8 px-3 rounded-lg bg-emerald-600 text-white font-bold text-[11px] flex items-center gap-1.5 hover:bg-emerald-500 transition-all shadow-xs cursor-pointer"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
                   تصدير ملف Excel 📊
@@ -586,8 +598,8 @@ export function SettingsView() {
 
                 <button
                   type="button"
-                  onClick={() => handleExportData("csv")}
-                  className="h-8 px-3 rounded-lg border border-border bg-background font-bold text-[11px] flex items-center gap-1.5 hover:bg-muted transition-all cursor-pointer"
+                  onClick={handleExportData}
+                  className="h-8 px-3 rounded-lg border border-border bg-background text-foreground font-bold text-[11px] flex items-center gap-1.5 hover:bg-muted transition-all cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5" />
                   تصدير CSV
@@ -598,10 +610,10 @@ export function SettingsView() {
         </div>
 
         {/* 🎯 الميزة 4: نظام حظر الحسابات والسبام */}
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <ShieldBan className="h-5 w-5 text-red-400" />
+              <ShieldBan className="h-5 w-5 text-red-500 shrink-0" />
               <div>
                 <h4 className="font-bold text-xs text-foreground">4. نظام حظر الحسابات والسبام (Blacklist & Anti-Spam)</h4>
                 <p className="text-[10px] text-muted-foreground">منع الأرقام الوهمية والزبائن المزعجين من استهلاك التوكنات أو إزعاج البوت.</p>
@@ -620,7 +632,7 @@ export function SettingsView() {
             >
               <span
                 className={cn(
-                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-sm",
+                  "absolute top-1 h-4 w-4 rounded-full bg-white transition-all shadow-xs",
                   antiSpam.enabled ? "right-1" : "right-6"
                 )}
               />
@@ -636,7 +648,7 @@ export function SettingsView() {
                   value={antiSpam.blockedNumbers}
                   onChange={(e) => setAntiSpam({ ...antiSpam, blockedNumbers: e.target.value })}
                   placeholder="مثال: 07700000000, 07800000000"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 font-mono text-xs outline-none focus:border-ring"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 font-mono text-xs outline-none focus:border-primary text-foreground"
                 />
               </div>
 
@@ -655,17 +667,17 @@ export function SettingsView() {
       </div>
 
       {/* زر الحفظ وإشارة النجاح */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pt-2">
         <button
           type="submit"
-          className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-md shadow-primary/20 cursor-pointer"
+          className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity shadow-sm cursor-pointer"
         >
           <Save className="h-4 w-4" />
           حفظ التغييرات والتفعيل
         </button>
 
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-500 animate-in fade-in">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-500 animate-in fade-in">
             <Check className="h-4 w-4" />
             تم حفظ جميع الإعدادات وتفعيل النظام بنجاح
           </span>

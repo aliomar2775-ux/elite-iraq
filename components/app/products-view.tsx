@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Search, Package, PackageCheck, PackageX, Layers, MoreVertical, Edit, Trash2, X } from "lucide-react"
 import { useApp } from "@/lib/app-state"
 import { type Product } from "@/lib/data"
@@ -26,12 +26,12 @@ function normalizeArabic(input: string): string {
 }
 
 export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
-  const { products, globalSearchQuery, setGlobalSearchQuery } = useApp()
+  const { products, globalSearchQuery, setGlobalSearchQuery, currency } = useApp()
   const [filter, setFilter] = useState<(typeof filters)[number]>("الكل")
   const [query, setQuery] = useState(globalSearchQuery || "")
   const [openAdd, setOpenAdd] = useState(false)
 
-  // 🎯 1. المزامنة المباشرة مع نص البحث المركزي القادم من Topbar
+  // المزامنة المباشرة مع نص البحث المركزي القادم من Topbar
   useEffect(() => {
     if (globalSearchQuery !== undefined) {
       setQuery(globalSearchQuery)
@@ -41,7 +41,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
     }
   }, [globalSearchQuery])
 
-  // 🎯 2. الاستماع التلقائي كخيار احتياطي لحدث التصفية المباشرة
+  // الاستماع التلقائي لحدث التصفية المباشرة
   useEffect(() => {
     const handleFilterProduct = (e: Event) => {
       const customEvent = e as CustomEvent<string>
@@ -62,7 +62,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
     }
   }
 
-  // حساب الملخص ديناميكياً مع الاعتماد على reorderPoint المستخرج لكل منتج
+  // حساب الملخص ديناميكياً
   const summary = useMemo(() => {
     const total = products.length
     const published = products.filter((p) => p.status === "منشور").length
@@ -70,14 +70,14 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
     const outOfStock = products.filter((p) => p.status === "نافد" || p.stock === 0).length
 
     return [
-      { label: "إجمالي المنتجات", value: total, icon: Layers, tint: "text-chart-1 bg-chart-1/15" },
-      { label: "منتجات منشورة", value: published, icon: PackageCheck, tint: "text-success bg-success/15" },
-      { label: "مخزون منخفض", value: lowStock, icon: Package, tint: "text-warning bg-warning/15" },
+      { label: "إجمالي المنتجات", value: total, icon: Layers, tint: "text-primary bg-primary/15" },
+      { label: "منتجات منشورة", value: published, icon: PackageCheck, tint: "text-emerald-500 bg-emerald-500/15" },
+      { label: "مخزون منخفض", value: lowStock, icon: Package, tint: "text-amber-500 bg-amber-500/15" },
       { label: "نفد من المخزون", value: outOfStock, icon: PackageX, tint: "text-destructive bg-destructive/15" },
     ]
   }, [products])
 
-  // تصفية القائمة بدقة بفضل دالة normalizeArabic وبدون استخدام any
+  // تصفية القائمة بدقة
   const list = useMemo(() => {
     const cleanQ = normalizeArabic(query)
     return products.filter((p: Product) => {
@@ -87,18 +87,18 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
       const nameStr = normalizeArabic(p.name || "")
       const catStr = normalizeArabic(p.category || "")
       const byQuery = nameStr.includes(cleanQ) || catStr.includes(cleanQ)
-      
+
       return byFilter && byQuery
     })
   }, [products, filter, query])
 
   return (
-    <div className="space-y-6 rtl">
+    <div className="space-y-6 rtl text-foreground">
       {canCreate ? (
         <div className="flex justify-end">
           <button
             onClick={() => setOpenAdd(true)}
-            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
           >
             منتج جديد
           </button>
@@ -107,12 +107,12 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {summary.map((s) => (
-          <div key={s.label} className="rounded-xl border border-border bg-card p-5">
+          <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-xs">
             <div className={cn("mb-3 flex h-9 w-9 items-center justify-center rounded-lg", s.tint)}>
               <s.icon className="h-5 w-5" />
             </div>
-            <p className="text-2xl font-bold tracking-tight">{s.value.toLocaleString("ar-IQ")}</p>
-            <p className="mt-0.5 text-sm text-muted-foreground">{s.label}</p>
+            <p className="text-2xl font-bold tracking-tight font-mono">{s.value.toLocaleString("ar-IQ")}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{s.label}</p>
           </div>
         ))}
       </div>
@@ -124,10 +124,10 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
               key={f}
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer",
+                "rounded-lg px-3.5 py-2 text-xs font-bold transition-all cursor-pointer",
                 filter === f
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-border text-muted-foreground hover:text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
               )}
             >
               {f}
@@ -143,12 +143,12 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
               if (setGlobalSearchQuery) setGlobalSearchQuery(e.target.value)
             }}
             placeholder="ابحث عن منتج..."
-            className="h-10 w-full rounded-lg border border-border bg-muted/40 pr-10 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:bg-background transition-colors"
+            className="h-10 w-full rounded-lg border border-border bg-muted/30 pr-10 pl-8 text-xs outline-none placeholder:text-muted-foreground focus:border-primary focus:bg-background transition-colors text-foreground"
           />
           {query && (
             <button
               onClick={handleClearQuery}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               title="إلغاء التصفية"
             >
               <X className="h-4 w-4" />
@@ -159,8 +159,10 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
 
       {query && (
         <div className="flex items-center justify-between rounded-lg bg-primary/10 border border-primary/20 px-4 py-2 text-xs text-primary">
-          <span>نتائج التصفية للمنتج: <strong>"{query}"</strong></span>
-          <button onClick={handleClearQuery} className="underline font-bold hover:text-primary/80">
+          <span>
+            نتائج التصفية للمنتج: <strong>"{query}"</strong>
+          </span>
+          <button onClick={handleClearQuery} className="underline font-bold hover:text-primary/80 cursor-pointer">
             عرض كافة المنتجات
           </button>
         </div>
@@ -168,14 +170,17 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {list.map((p: Product) => (
-          <ProductCard key={p.id} product={p} />
+          <ProductCard key={p.id} product={p} currency={currency} />
         ))}
         {list.length === 0 ? (
-          <div className="col-span-full rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground space-y-2">
+          <div className="col-span-full rounded-xl border border-dashed border-border py-12 text-center text-xs text-muted-foreground space-y-2">
             <p>لا توجد منتجات مطابقة لـ "{query}"</p>
             <button
-              onClick={() => { handleClearQuery(); setFilter("الكل"); }}
-              className="text-xs font-bold text-primary underline"
+              onClick={() => {
+                handleClearQuery()
+                setFilter("الكل")
+              }}
+              className="text-xs font-bold text-primary underline cursor-pointer"
             >
               إلغاء البحث والتصفية
             </button>
@@ -192,21 +197,26 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
   )
 }
 
-function ProductCard({ product: p }: { product: Product }) {
-  const { deleteProduct, currency } = useApp()
+function ProductCard({ product: p, currency }: { product: Product; currency: string }) {
+  const { deleteProduct } = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // الاعتماد على reorderPoint المخصص بكل منتج مع قيمة افتراضية أمان
+  const renderMoney = useCallback(
+    (amount: number) => {
+      return currency === "IQD" ? formatIQD(amount) : formatPrice(amount, currency)
+    },
+    [currency]
+  )
+
   const reorderThreshold = p.reorderPoint ?? 10
   const low = p.stock > 0 && p.stock <= reorderThreshold
   const out = p.stock === 0
-  
-  // حساب نسبة الشريط بناءً على نقطة التنبيه
-  const maxCapacity = reorderThreshold * 4
-  const stockPct = Math.min(100, (p.stock / maxCapacity) * 100)
+
+  const maxCapacity = Math.max(p.stock, reorderThreshold * 3)
+  const stockPct = out ? 0 : Math.min(100, Math.max(8, (p.stock / maxCapacity) * 100))
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -225,16 +235,16 @@ function ProductCard({ product: p }: { product: Product }) {
 
   return (
     <>
-      <div className="relative overflow-hidden rounded-xl border border-border bg-card">
+      <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex flex-col justify-between">
         <div className="absolute top-2 left-2 z-10" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-foreground backdrop-blur-sm shadow-sm hover:bg-background transition-colors cursor-pointer"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-foreground backdrop-blur-xs shadow-xs hover:bg-background transition-colors cursor-pointer"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
           {menuOpen ? (
-            <div className="absolute top-9 left-0 w-36 rounded-lg border border-border bg-card p-1 shadow-lg z-20">
+            <div className="absolute top-9 left-0 w-36 rounded-lg border border-border bg-card p-1 shadow-lg z-20 animate-in zoom-in-95 duration-100">
               <button
                 onClick={() => {
                   setMenuOpen(false)
@@ -259,7 +269,7 @@ function ProductCard({ product: p }: { product: Product }) {
           ) : null}
         </div>
 
-        <div className="flex h-32 items-center justify-center overflow-hidden bg-muted/40">
+        <div className="flex h-36 items-center justify-center overflow-hidden bg-muted/40 relative">
           {p.image ? (
             <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
           ) : (
@@ -268,7 +278,7 @@ function ProductCard({ product: p }: { product: Product }) {
               style={{ background: `color-mix(in oklch, ${p.accent || "var(--primary)"} 22%, var(--card))` }}
             >
               <span
-                className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold text-white"
+                className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-xs"
                 style={{ background: p.accent || "var(--primary)" }}
               >
                 {p.name.charAt(0)}
@@ -276,42 +286,46 @@ function ProductCard({ product: p }: { product: Product }) {
             </div>
           )}
         </div>
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate font-semibold">{p.name}</p>
-              <p className="text-xs text-muted-foreground">{p.category}</p>
+
+        <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+          <div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-bold text-xs text-foreground">{p.name}</p>
+                <p className="text-[11px] text-muted-foreground">{p.category}</p>
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                  p.status === "منشور" && "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30",
+                  p.status === "مسودة" && "bg-muted text-muted-foreground border border-border",
+                  p.status === "نافد" && "bg-destructive/15 text-destructive border border-destructive/30"
+                )}
+              >
+                {p.status}
+              </span>
             </div>
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                p.status === "منشور" && "bg-success/15 text-success",
-                p.status === "مسودة" && "bg-muted text-muted-foreground",
-                p.status === "نافد" && "bg-destructive/15 text-destructive",
-              )}
-            >
-              {p.status}
-            </span>
+
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-base font-bold font-mono text-primary">{renderMoney(p.price)}</span>
+              <span className="text-[11px] text-muted-foreground font-mono">{p.sold || 0} مبيعًا</span>
+            </div>
           </div>
 
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-lg font-bold">
-              {currency === "IQD" ? formatIQD(p.price) : formatPrice(p.price, currency)}
-            </span>
-            <span className="text-xs text-muted-foreground">{p.sold || 0} مبيعًا</span>
-          </div>
-
-          <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-xs">
+          <div>
+            <div className="mb-1 flex items-center justify-between text-[11px]">
               <span className="text-muted-foreground">المخزون</span>
-              <span className={cn("font-medium", out ? "text-destructive" : low ? "text-warning" : "text-foreground")}>
+              <span className={cn("font-bold font-mono", out ? "text-destructive" : low ? "text-amber-500" : "text-foreground")}>
                 {out ? "نافد" : `${p.stock} قطعة`}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn("h-full rounded-full transition-all duration-300", out ? "bg-destructive" : low ? "bg-warning" : "bg-primary")}
-                style={{ width: `${out ? 0 : stockPct}%` }}
+                className={cn(
+                  "h-full rounded-full transition-all duration-300",
+                  out ? "bg-destructive" : low ? "bg-amber-500" : "bg-primary"
+                )}
+                style={{ width: `${stockPct}%` }}
               />
             </div>
           </div>
@@ -326,20 +340,20 @@ function ProductCard({ product: p }: { product: Product }) {
 
       {confirmDelete ? (
         <Modal title="تأكيد حذف المنتج" onClose={() => setConfirmDelete(false)}>
-          <div className="space-y-4 pt-2 text-center rtl">
-            <p className="text-sm text-muted-foreground">
+          <div className="space-y-4 pt-2 text-center text-xs">
+            <p className="text-muted-foreground leading-relaxed">
               هل أنت متأكد من رغبتك في حذف المنتج <span className="font-bold text-foreground">"{p.name}"</span>؟ لا يمكن التراجع عن هذا الإجراء.
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                className="rounded-lg border border-border px-4 py-2 font-medium hover:bg-muted cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 onClick={handleDelete}
-                className="rounded-lg bg-destructive text-destructive-foreground px-4 py-2 text-sm font-medium hover:bg-destructive/90"
+                className="rounded-lg bg-destructive text-destructive-foreground px-4 py-2 font-bold hover:opacity-90 cursor-pointer"
               >
                 تأكيد الحذف
               </button>
