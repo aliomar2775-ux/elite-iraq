@@ -5,7 +5,7 @@ import { Search, Package, PackageCheck, PackageX, Layers, MoreVertical, Edit, Tr
 import { useApp } from "@/lib/app-state"
 import { type Product } from "@/lib/data"
 import { formatIQD } from "@/lib/iraq"
-import { cn } from "@/lib/utils"
+import { formatPrice, cn } from "@/lib/utils"
 import { Modal } from "@/components/app/modal"
 import { ProductForm } from "@/components/app/product-form"
 
@@ -96,7 +96,10 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
     <div className="space-y-6 rtl">
       {canCreate ? (
         <div className="flex justify-end">
-          <button onClick={() => setOpenAdd(true)} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
+          <button
+            onClick={() => setOpenAdd(true)}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
             منتج جديد
           </button>
         </div>
@@ -121,7 +124,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
               key={f}
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+                "rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer",
                 filter === f
                   ? "bg-primary text-primary-foreground"
                   : "border border-border text-muted-foreground hover:text-foreground",
@@ -140,7 +143,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
               if (setGlobalSearchQuery) setGlobalSearchQuery(e.target.value)
             }}
             placeholder="ابحث عن منتج..."
-            className="h-10 w-full rounded-lg border border-border bg-muted/40 pr-10 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:bg-background"
+            className="h-10 w-full rounded-lg border border-border bg-muted/40 pr-10 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:bg-background transition-colors"
           />
           {query && (
             <button
@@ -181,7 +184,7 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
       </div>
 
       {openAdd ? (
-        <Modal title="إضافة منتج بالدينار العراقي" onClose={() => setOpenAdd(false)}>
+        <Modal title="إضافة منتج جديد" onClose={() => setOpenAdd(false)}>
           <ProductForm onDone={() => setOpenAdd(false)} />
         </Modal>
       ) : null}
@@ -190,9 +193,10 @@ export function ProductsView({ canCreate = false }: { canCreate?: boolean }) {
 }
 
 function ProductCard({ product: p }: { product: Product }) {
-  const { deleteProduct } = useApp()
+  const { deleteProduct, currency } = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // الاعتماد على reorderPoint المخصص بكل منتج مع قيمة افتراضية أمان
@@ -214,24 +218,29 @@ function ProductCard({ product: p }: { product: Product }) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const handleDelete = () => {
+    deleteProduct(p.id)
+    setConfirmDelete(false)
+  }
+
   return (
     <>
       <div className="relative overflow-hidden rounded-xl border border-border bg-card">
         <div className="absolute top-2 left-2 z-10" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-foreground backdrop-blur-sm shadow-sm hover:bg-background transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-foreground backdrop-blur-sm shadow-sm hover:bg-background transition-colors cursor-pointer"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
           {menuOpen ? (
-            <div className="absolute top-9 left-0 w-36 rounded-lg border border-border bg-card p-1 shadow-lg">
+            <div className="absolute top-9 left-0 w-36 rounded-lg border border-border bg-card p-1 shadow-lg z-20">
               <button
                 onClick={() => {
                   setMenuOpen(false)
                   setEditing(true)
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
               >
                 <Edit className="h-3.5 w-3.5 text-muted-foreground" />
                 تعديل المنتج
@@ -239,11 +248,9 @@ function ProductCard({ product: p }: { product: Product }) {
               <button
                 onClick={() => {
                   setMenuOpen(false)
-                  if (confirm(`هل أنت متأكد من حذف المنتج "${p.name}"؟`)) {
-                    deleteProduct(p.id)
-                  }
+                  setConfirmDelete(true)
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 حذف المنتج
@@ -288,7 +295,9 @@ function ProductCard({ product: p }: { product: Product }) {
           </div>
 
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-lg font-bold">{formatIQD(p.price)}</span>
+            <span className="text-lg font-bold">
+              {currency === "IQD" ? formatIQD(p.price) : formatPrice(p.price, currency)}
+            </span>
             <span className="text-xs text-muted-foreground">{p.sold || 0} مبيعًا</span>
           </div>
 
@@ -312,6 +321,30 @@ function ProductCard({ product: p }: { product: Product }) {
       {editing ? (
         <Modal title="تعديل المنتج" onClose={() => setEditing(false)}>
           <ProductForm product={p} onDone={() => setEditing(false)} />
+        </Modal>
+      ) : null}
+
+      {confirmDelete ? (
+        <Modal title="تأكيد حذف المنتج" onClose={() => setConfirmDelete(false)}>
+          <div className="space-y-4 pt-2 text-center rtl">
+            <p className="text-sm text-muted-foreground">
+              هل أنت متأكد من رغبتك في حذف المنتج <span className="font-bold text-foreground">"{p.name}"</span>؟ لا يمكن التراجع عن هذا الإجراء.
+            </p>
+            <div className="flex justify-center gap-3 pt-2">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDelete}
+                className="rounded-lg bg-destructive text-destructive-foreground px-4 py-2 text-sm font-medium hover:bg-destructive/90"
+              >
+                تأكيد الحذف
+              </button>
+            </div>
+          </div>
         </Modal>
       ) : null}
     </>
