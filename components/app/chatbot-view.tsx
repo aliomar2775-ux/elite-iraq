@@ -78,6 +78,16 @@ interface Message {
   isTranscribed?: boolean
 }
 
+// 🔔 سجل الأحداث والإشعارات الداخلية
+interface ActivityLogEntry {
+  id: string
+  chatId: string
+  customerName: string
+  text: string
+  time: string
+  kind: "rule" | "urgent" | "resume" | "cancel" | "ai" | "order"
+}
+
 // 🚚 هيكل أسعار الشحن المخصصة مع دعم الاختيار المتعدد بالمصفوفة
 interface DeliveryRates {
   homeGovName: string      // اسم محافظة المتجر
@@ -97,6 +107,8 @@ interface ChatSession {
   platform: "whatsapp" | "instagram" | "tiktok"
   status: "BOT_ACTIVE" | "HUMAN_OVERRIDE" | "CANCELLATION_INQUIRY"
   lastMessageTime: string
+  lastMerchantReplyAt?: number
+  isUrgent?: boolean
   customerProfile: CustomerProfile
   extractedOrder?: {
     name?: string
@@ -120,6 +132,34 @@ export function ChatbotView() {
   const [botEnabled, setBotEnabled] = useState(true)
   const [aiEnabled, setAiEnabled] = useState(true)
   const [autoResumeMinutes, setAutoResumeMinutes] = useState(10)
+
+  // 🆕 1) سجل الأحداث والإشعارات
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
+  const [showActivityPanel, setShowActivityPanel] = useState(false)
+  const [unreadActivity, setUnreadActivity] = useState(0)
+
+  // 🆕 2) بحث وتصفية المحادثات
+  const [chatSearchQuery, setChatSearchQuery] = useState("")
+  const [chatStatusFilter, setChatStatusFilter] = useState<"ALL" | "BOT_ACTIVE" | "HUMAN_OVERRIDE" | "CANCELLATION_INQUIRY" | "URGENT">("ALL")
+
+  // 🆕 3) اقتراحات ردود سريعة أثناء الرد اليدوي
+  const QUICK_REPLIES = [
+    "أهلاً وسهلاً بيك عيوني 🌸",
+    "تدلل، راح نتواصل وياك خلال دقائق",
+    "شكراً لتواصلكم معنا 🙏",
+    "تم استلام طلبك وجاري تجهيزه ✅",
+    "عذراً على التأخير، راح نعوضك 🙏",
+  ]
+
+  // 🆕 4) تلخيص المحادثة بالذكاء الاصطناعي
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [summaryText, setSummaryText] = useState<Record<string, string>>({})
+
+  // 🆕 5) كشف الرسائل العاجلة / الشكاوى تلقائياً
+  const URGENT_KEYWORDS = [
+    "شكوى", "أشتكي", "تهديد", "المحامي", "استرجاع فلوسي", "احتيال",
+    "أسوء خدمة", "خراب", "ما يصير هيچي", "زعلان", "غاضب", "نصب", "حرامية",
+  ]
 
   // 🚚 أسعار وشروط الشحن المحددة من التاجر (افتراضياً: بغداد هي المتجر)
   const [deliveryRates, setDeliveryRates] = useState<DeliveryRates>({
@@ -216,6 +256,22 @@ export function ChatbotView() {
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0]
+
+  // 🔎 المحادثات بعد تطبيق البحث والتصفية
+  const filteredChats = chats.filter((c) => {
+    const q = chatSearchQuery.trim().toLowerCase()
+    const matchesSearch =
+      q.length === 0 ||
+      c.customerName.toLowerCase().includes(q) ||
+      c.customerHandle.toLowerCase().includes(q) ||
+      c.customerPhone.includes(q)
+
+    const matchesFilter =
+      chatStatusFilter === "ALL" ||
+      (chatStatusFilter === "URGENT" ? c.isUrgent : c.status === chatStatusFilter)
+
+    return matchesSearch && matchesFilter
+  })
   const tokensUsed = merchant?.aiTokensUsed ?? 0
   const tokenLimit = merchant?.aiTokenLimit ?? 500_000
   const isExceeded = tokensUsed >= tokenLimit
@@ -223,6 +279,78 @@ export function ChatbotView() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [activeChat.messages])
+
+  // 🔔 إضافة حدث لسجل الأحداث والإشعارات
+  const addActivity = (chatId: string, customerName: string, text: string, kind: ActivityLogEntry["kind"]) => {
+    setActivityLog((prev) => [
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        chatId,
+        customerName,
+        text,
+        kind,
+        time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+      },
+      ...prev,
+    ].slice(0, 50))
+    setUnreadActivity((n) => n + 1)
+  }
+
+  // 🔗 ربط الردود الصادرة فعلياً بنظام إرسال الرسائل الحقيقي (واتساب/انستغرام/تيك توك)
+  // هذه الدالة هي نقطة الربط مع الـ backend: أي رد يُنشأ محلياً (بوت/تاجر/قاعدة جاهزة)
+  // يمر عبرها ليُرسل فعلياً للزبون عبر منصة التواصل الخاصة به.
+  const dispatchToPlatform = async (chat: ChatSession, text: string) => {
+    try {
+      await fetch("/api/messages/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: chat.platform,
+          customerHandle: chat.customerHandle,
+          customerPhone: chat.customerPhone,
+          text,
+        }),
+      })
+    } catch (err) {
+      // لا نوقف واجهة المحادثة إذا فشل الإرسال الفعلي، لكن نسجّله للمراجعة
+      console.error("فشل إرسال الرسالة عبر النظام الخارجي:", err)
+      addActivity(chat.id, chat.customerName, "⚠️ تعذر إرسال الرد فعلياً عبر المنصة، تحقق من الاتصال", "urgent")
+    }
+  }
+
+  // ⏱️ تفعيل "مهلة صمت البوت" فعلياً: استئناف الرد الآلي تلقائياً بعد
+  // انتهاء المدة المحددة من دون رد جديد من التاجر أثناء وضع الرد اليدوي
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now()
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.status !== "HUMAN_OVERRIDE" || !c.lastMerchantReplyAt) return c
+          const elapsedMinutes = (now - c.lastMerchantReplyAt) / 60000
+          if (elapsedMinutes >= autoResumeMinutes) {
+            addActivity(c.id, c.customerName, `تم استئناف الرد الآلي تلقائياً بعد ${autoResumeMinutes} دقائق صمت`, "resume")
+            return {
+              ...c,
+              status: "BOT_ACTIVE",
+              lastMerchantReplyAt: undefined,
+              messages: [
+                ...c.messages,
+                {
+                  id: `${Date.now()}`,
+                  sender: "system",
+                  text: `🔄 تم استئناف الرد الآلي تلقائياً (مرّ ${autoResumeMinutes} دقائق بدون رد يدوي).`,
+                  time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+                  timestamp: now,
+                },
+              ],
+            }
+          }
+          return c
+        })
+      )
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [autoResumeMinutes])
 
   // 🚚 حاسبة الشحن الديناميكية بحسب خيارات التاجر المحددة بالنقر
   const calculateDeliveryFee = (text: string): { gov: string; fee: number } => {
@@ -389,6 +517,35 @@ export function ChatbotView() {
     }
   }
 
+  // 🧠 تلخيص المحادثة بالذكاء الاصطناعي بضغطة زر واحدة
+  const handleSummarizeChat = async (chat: ChatSession) => {
+    if (isSummarizing) return
+    setIsSummarizing(true)
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "لخّص هذه المحادثة مع الزبون بجملتين إلى ثلاث جمل باللهجة العراقية، مع ذكر أهم طلب أو مشكلة والحالة الحالية.",
+          planId: merchant?.activePlanId || "pro",
+          model: merchant?.aiModel || "gemini-2.5-flash",
+          conversationHistory: chat.messages.slice(-12).map((m) => ({
+            role: m.sender === "bot" || m.sender === "merchant" ? "model" : "user",
+            parts: [{ text: m.text }],
+          })),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.details || data.error || "تعذر التلخيص")
+      incrementAiUsage(400)
+      setSummaryText((prev) => ({ ...prev, [chat.id]: data.reply || "تعذر توليد ملخص لهذه المحادثة." }))
+    } catch (err) {
+      setSummaryText((prev) => ({ ...prev, [chat.id]: "⚠️ تعذر الاتصال بخدمة التلخيص، حاول مرة أخرى." }))
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputText.trim() || isGenerating) return
@@ -397,13 +554,16 @@ export function ChatbotView() {
     const timeNow = new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" })
 
     if (senderType === "merchant") {
+      dispatchToPlatform(activeChat, msgText)
       setChats((prev) =>
         prev.map((c) => {
           if (c.id !== activeChatId) return c
           return {
             ...c,
             status: "HUMAN_OVERRIDE",
-            messages: [...c.messages, { id: Date.now().toString(), sender: "merchant", text: msgText, time: timeNow }],
+            lastMerchantReplyAt: Date.now(),
+            isUrgent: false,
+            messages: [...c.messages, { id: Date.now().toString(), sender: "merchant", text: msgText, time: timeNow, timestamp: Date.now() }],
           }
         })
       )
@@ -424,6 +584,33 @@ export function ChatbotView() {
 
     checkAndParseAddressPassively(msgText, activeChatId)
 
+    // 🚨 كشف الرسائل العاجلة/الشكاوى وتصعيدها فوراً للتاجر
+    const isUrgentMsg = URGENT_KEYWORDS.some((kw) => msgText.includes(kw))
+    if (isUrgentMsg) {
+      addActivity(activeChatId, activeChat.customerName, `رسالة عاجلة تحتاج تدخل: "${msgText.slice(0, 40)}"`, "urgent")
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.id !== activeChatId) return c
+          return {
+            ...c,
+            isUrgent: true,
+            status: "HUMAN_OVERRIDE",
+            messages: [
+              ...c.messages,
+              {
+                id: `${Date.now()}-sys`,
+                sender: "system",
+                text: "🚨 تم رصد رسالة عاجلة (شكوى/استياء) وتم إيقاف الرد الآلي تلقائياً بانتظار تدخل التاجر.",
+                time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+                timestamp: Date.now(),
+              },
+            ],
+          }
+        })
+      )
+      return
+    }
+
     if (!botEnabled || activeChat.status === "HUMAN_OVERRIDE") return
 
     setIsGenerating(true)
@@ -436,6 +623,7 @@ export function ChatbotView() {
 
     const cancelKeywords = ["ألغي", "الغاء", "الغي", "تأخرتوا", "ما أحتاجه", "غيرت رأيي", "كنسل"]
     if (cancelKeywords.some((kw) => msgText.includes(kw))) {
+      addActivity(activeChatId, activeChat.customerName, "طلب استفسار عن إلغاء طلب", "cancel")
       setTimeout(() => {
         setChats((prev) =>
           prev.map((c) => {
@@ -468,6 +656,8 @@ export function ChatbotView() {
 
     if (matchedRule) {
       incrementRuleHits(matchedRule.id)
+      addActivity(activeChatId, activeChat.customerName, `رد جاهز فوري (0 توكنز): "${matchedRule.trigger}"`, "rule")
+      dispatchToPlatform(activeChat, matchedRule.reply)
       setTimeout(() => {
         setChats((prev) =>
           prev.map((c) => {
@@ -481,6 +671,7 @@ export function ChatbotView() {
                   sender: "bot",
                   text: matchedRule.reply,
                   time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+                  timestamp: Date.now(),
                 },
               ],
             }
@@ -515,6 +706,9 @@ export function ChatbotView() {
       if (!response.ok) throw new Error(data.details || data.error || "خطأ في الاتصال")
 
       incrementAiUsage(1500)
+      const aiReplyText = data.reply || "عذراً عيوني، صار خلل بسيط."
+      dispatchToPlatform(activeChat, aiReplyText)
+      addActivity(activeChatId, activeChat.customerName, "رد تلقائي بالذكاء الاصطناعي", "ai")
 
       setChats((prev) =>
         prev.map((c) => {
@@ -526,8 +720,9 @@ export function ChatbotView() {
               {
                 id: Date.now().toString(),
                 sender: "bot",
-                text: data.reply || "عذراً عيوني، صار خلل بسيط.",
+                text: aiReplyText,
                 time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+                timestamp: Date.now(),
               },
             ],
           }
@@ -589,6 +784,56 @@ export function ChatbotView() {
               <option value={5}>5 دقائق</option>
               <option value={10}>10 دقائق</option>
             </select>
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowActivityPanel((v) => !v)
+                setUnreadActivity(0)
+              }}
+              className="relative h-10 w-10 rounded-xl border border-border bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all"
+              title="سجل الأحداث والإشعارات"
+            >
+              <Bell className="h-4 w-4 text-foreground" />
+              {unreadActivity > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
+                  {unreadActivity > 9 ? "9+" : unreadActivity}
+                </span>
+              )}
+            </button>
+
+            {showActivityPanel && (
+              <div className="absolute left-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-border bg-card shadow-xl z-20 p-2 space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 border-b border-border/60 mb-1">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <History className="h-3.5 w-3.5 text-primary" /> سجل الأحداث
+                  </span>
+                  <button onClick={() => setShowActivityPanel(false)} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {activityLog.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground text-center py-4">لا توجد أحداث بعد.</p>
+                ) : (
+                  activityLog.map((a) => (
+                    <div
+                      key={a.id}
+                      className={cn(
+                        "text-[11px] p-2 rounded-lg border leading-relaxed",
+                        a.kind === "urgent" ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-muted/30 border-border/60"
+                      )}
+                    >
+                      <div className="flex items-center justify-between font-bold mb-0.5">
+                        <span>{a.customerName}</span>
+                        <span className="text-[9px] text-muted-foreground font-mono">{a.time}</span>
+                      </div>
+                      <p className="text-muted-foreground">{a.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -669,47 +914,90 @@ export function ChatbotView() {
         <section className="xl:col-span-7 grid grid-cols-1 md:grid-cols-12 rounded-xl border border-border bg-card shadow-sm overflow-hidden h-155">
           
           <div className="md:col-span-4 border-l border-border flex flex-col bg-muted/20">
-            <div className="p-3 border-b border-border bg-card">
+            <div className="p-3 border-b border-border bg-card space-y-2">
               <h3 className="font-bold text-xs text-foreground flex items-center justify-between">
                 <span>المحادثات النشطة</span>
                 <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">
-                  {chats.length}
+                  {filteredChats.length}/{chats.length}
                 </span>
               </h3>
+
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 text-muted-foreground absolute right-2.5 top-2.5" />
+                <input
+                  value={chatSearchQuery}
+                  onChange={(e) => setChatSearchQuery(e.target.value)}
+                  placeholder="بحث بالاسم، الحساب أو الرقم..."
+                  className="h-8 w-full rounded-lg border border-border bg-background pr-8 pl-2 text-[11px] outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1">
+                {([
+                  { key: "ALL", label: "الكل" },
+                  { key: "BOT_ACTIVE", label: "البوت نشط" },
+                  { key: "HUMAN_OVERRIDE", label: "رد يدوي" },
+                  { key: "URGENT", label: "🚨 عاجل" },
+                ] as const).map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setChatStatusFilter(f.key)}
+                    className={cn(
+                      "px-2 py-1 rounded-md text-[10px] font-bold border transition-all",
+                      chatStatusFilter === f.key
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-muted-foreground border-border hover:text-foreground"
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-border/60">
-              {chats.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => setActiveChatId(c.id)}
-                  className={`p-3 cursor-pointer transition-all ${
-                    activeChatId === c.id ? "bg-primary/10 border-r-4 border-primary" : "hover:bg-muted/40"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs text-foreground truncate">{c.customerName}</span>
-                    <span className="text-[9px] text-muted-foreground">{c.lastMessageTime}</span>
+              {filteredChats.length === 0 ? (
+                <p className="p-6 text-center text-[11px] text-muted-foreground">لا توجد محادثات مطابقة للبحث/التصفية.</p>
+              ) : (
+                filteredChats.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => setActiveChatId(c.id)}
+                    className={`p-3 cursor-pointer transition-all ${
+                      activeChatId === c.id ? "bg-primary/10 border-r-4 border-primary" : "hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs text-foreground truncate">{c.customerName}</span>
+                      <span className="text-[9px] text-muted-foreground">{c.lastMessageTime}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-[10px] font-mono font-bold text-primary flex items-center gap-0.5">
+                        <AtSign className="h-3 w-3 text-primary/70" />
+                        {c.customerHandle.replace("@", "")}
+                      </span>
+                      <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground border">
+                        {c.platform}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1 mb-1">
+                      {c.isUrgent && (
+                        <span className="inline-flex items-center gap-1 text-[9px] bg-red-500/15 text-red-400 font-bold px-1.5 py-0.5 rounded border border-red-500/30">
+                          <AlertTriangle className="h-3 w-3" /> عاجل
+                        </span>
+                      )}
+                      {c.extractedOrder?.isModified && (
+                        <span className="inline-flex items-center gap-1 text-[9px] bg-amber-500/15 text-amber-500 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                          <RefreshCw className="h-3 w-3 animate-spin" /> تعديل حديث
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-muted-foreground truncate">{c.messages[c.messages.length - 1]?.text}</p>
                   </div>
-
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <span className="text-[10px] font-mono font-bold text-primary flex items-center gap-0.5">
-                      <AtSign className="h-3 w-3 text-primary/70" />
-                      {c.customerHandle.replace("@", "")}
-                    </span>
-                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground border">
-                      {c.platform}
-                    </span>
-                  </div>
-
-                  {c.extractedOrder?.isModified && (
-                    <span className="inline-flex items-center gap-1 text-[9px] bg-amber-500/15 text-amber-500 font-bold px-1.5 py-0.5 rounded border border-amber-500/30 mb-1">
-                      <RefreshCw className="h-3 w-3 animate-spin" /> تعديل حديث
-                    </span>
-                  )}
-
-                  <p className="text-[10px] text-muted-foreground truncate">{c.messages[c.messages.length - 1]?.text}</p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -737,16 +1025,42 @@ export function ChatbotView() {
                 </div>
               </div>
 
-              {activeChat.customerProfile.riskLevel === "HIGH" ? (
-                <span className="text-[10px] bg-red-500/15 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/30 flex items-center gap-1">
-                  <ShieldAlert className="h-3.5 w-3.5" /> راجع سابق ({activeChat.customerProfile.returnedOrders})
-                </span>
-              ) : (
-                <span className="text-[10px] bg-emerald-500/15 text-emerald-400 font-bold px-2 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" /> زبون موثوق
-                </span>
-              )}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleSummarizeChat(activeChat)}
+                  disabled={isSummarizing}
+                  className="h-8 px-2.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold flex items-center gap-1.5 hover:bg-primary/20 disabled:opacity-60"
+                  title="تلخيص المحادثة بالذكاء الاصطناعي"
+                >
+                  {isSummarizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  تلخيص المحادثة
+                </button>
+
+                {activeChat.customerProfile.riskLevel === "HIGH" ? (
+                  <span className="text-[10px] bg-red-500/15 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/30 flex items-center gap-1">
+                    <ShieldAlert className="h-3.5 w-3.5" /> راجع سابق ({activeChat.customerProfile.returnedOrders})
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-emerald-500/15 text-emerald-400 font-bold px-2 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1">
+                    <ShieldCheck className="h-3.5 w-3.5" /> زبون موثوق
+                  </span>
+                )}
+              </div>
             </div>
+
+            {activeChat.isUrgent && (
+              <div className="mx-3 mt-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 text-[11px] font-bold flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                رُصدت رسالة عاجلة/شكوى في هذه المحادثة — تم إيقاف الرد الآلي بانتظار تدخلك.
+              </div>
+            )}
+
+            {summaryText[activeChat.id] && (
+              <div className="mx-3 mt-3 p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-[11px] leading-relaxed flex items-start gap-2">
+                <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                <p className="text-foreground">{summaryText[activeChat.id]}</p>
+              </div>
+            )}
 
             {/* 🚚 الوصل مع أجور التوصيل المحسوبة */}
             {activeChat.extractedOrder && (
@@ -799,6 +1113,16 @@ export function ChatbotView() {
                 const isBot = m.sender === "bot"
                 const isMerchant = m.sender === "merchant"
                 const isVoice = m.type === "voice"
+
+                if (m.sender === "system") {
+                  return (
+                    <div key={m.id} className="flex justify-center">
+                      <span className="max-w-[90%] text-center text-[10px] font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 py-1.5 leading-relaxed">
+                        {m.text}
+                      </span>
+                    </div>
+                  )
+                }
 
                 return (
                   <div key={m.id} className={`flex gap-2 ${m.sender === "customer" ? "flex-row" : "flex-row-reverse"}`}>
@@ -861,6 +1185,21 @@ export function ChatbotView() {
                   </label>
                 </div>
               </div>
+
+              {senderType === "merchant" && (
+                <div className="flex flex-wrap gap-1.5 px-1">
+                  {QUICK_REPLIES.map((qr, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setInputText(qr)}
+                      className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all"
+                    >
+                      {qr}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <input
