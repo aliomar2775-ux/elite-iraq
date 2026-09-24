@@ -25,6 +25,13 @@ import {
   MapPin,
   Ban,
   Check,
+  Bell,
+  Search,
+  AlertTriangle,
+  Sparkles,
+  X,
+  History,
+  Loader2,
 } from "lucide-react"
 import { chatbotStats } from "@/lib/data"
 import { StatCards } from "@/components/app/stat-cards"
@@ -65,6 +72,7 @@ interface Message {
   sender: "customer" | "bot" | "merchant" | "system"
   text: string
   time: string
+  timestamp?: number
   type?: "text" | "voice"
   audioDuration?: string
   isTranscribed?: boolean

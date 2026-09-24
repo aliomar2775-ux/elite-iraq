@@ -4,7 +4,7 @@ import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { useApp } from "@/lib/app-state"
 
-const PUBLIC_PATHS = new Set(["/login", "/register"])
+const PUBLIC_PATHS = new Set(["/login", "/register", "/auth/callback"])
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, user, merchant } = useApp()

@@ -21,10 +21,12 @@ import {
   type ReplyRule,
 } from "@/lib/data"
 import { emptyAddress, type Address } from "@/lib/iraq"
+import { TAB_PATHS } from "@/lib/navigation"
 
-const STORAGE_KEY = "elite-iraq-app-v1"
+const STORAGE_KEY = "elite-iraq-app-v2"
 const DEMO_EMAIL = "demo@elite.iq"
 const DEMO_PASSWORD = "Elite123"
+const LOCAL_OTP = "123456"
 
 export type ChannelId = "instagram" | "tiktok" | "whatsapp" | "snapchat"
 
@@ -42,10 +44,62 @@ export type SessionUser = {
   email: string
 }
 
+export type NotificationPrefs = {
+  emailNewOrder: boolean
+  soundNotification: boolean
+  whatsappMerchantAlert: boolean
+  highRiskAlert: boolean
+}
+
+export type TelegramSettings = {
+  enabled: boolean
+  botToken: string
+  chatId: string
+}
+
+export type BusinessHours = {
+  enabled: boolean
+  startTime: string
+  endTime: string
+  offHoursMessage: string
+}
+
+export type AutoBackup = {
+  enabled: boolean
+  frequency: string
+}
+
+export type AntiSpam = {
+  enabled: boolean
+  blockedNumbers: string
+  autoBlockHighReturns: boolean
+}
+
+export type Coupon = {
+  id: string
+  code: string
+  percent: number
+  active: boolean
+  used: number
+  maxUses: number
+}
+
+export type AppNotification = {
+  id: string
+  title: string
+  time: string
+  read: boolean
+  type: "message" | "order" | "system" | "alert"
+  href?: string
+}
+
 export type MerchantProfile = {
   storeName: string
   slug: string
   phone: string
+  ownerName?: string
+  contactEmail?: string
+  storeAddressText?: string
   plan: string
   activePlanId: string
   aiModel: "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-1.5-flash" | "gemini-1.5-pro"
@@ -53,6 +107,11 @@ export type MerchantProfile = {
   aiTokenLimit: number
   address: Address
   ready: boolean
+  notifications?: NotificationPrefs
+  telegramSettings?: TelegramSettings
+  businessHours?: BusinessHours
+  autoBackup?: AutoBackup
+  antiSpam?: AntiSpam
 }
 
 type PersistedUser = SessionUser & {
@@ -65,6 +124,8 @@ type PersistedUser = SessionUser & {
   language?: string
   currency?: string
   theme?: string
+  coupons?: Coupon[]
+  notifications?: AppNotification[]
 }
 
 type AppState = {
@@ -89,8 +150,12 @@ type AppState = {
   setLanguage: (lang: string) => void
   setCurrency: (curr: string) => void
   setTheme: (theme: string) => void
+  coupons: Coupon[]
+  notificationsInbox: AppNotification[]
   login: (email: string, password: string) => Promise<string | null>
-  register: (name: string, email: string, password: string) => Promise<string | null>
+  loginWithPhone: (phone: string, otp: string) => Promise<string | null>
+  sendLocalOtp: (phone: string) => Promise<string | null>
+  register: (name: string, email: string, password: string, extra?: { storeName?: string; phone?: string }) => Promise<string | null>
   logout: () => void
   completeOnboarding: (input: { storeName: string; slug: string; phone: string; address: Address }) => void
   updateMerchant: (patch: Partial<MerchantProfile>) => void
@@ -109,6 +174,14 @@ type AppState = {
   toggleRule: (id: string) => void
   deleteRule: (id: string) => void
   incrementRuleHits: (id: string) => void
+  addCoupon: (coupon: Omit<Coupon, "id" | "used">) => void
+  toggleCoupon: (id: string) => void
+  deleteCoupon: (id: string) => void
+  applyCoupon: (code: string) => Coupon | null
+  pushNotification: (item: Omit<AppNotification, "id" | "time" | "read">) => void
+  markNotificationRead: (id: string) => void
+  markAllNotificationsRead: () => void
+  clearNotifications: () => void
 }
 
 const CHANNEL_CATALOG: ConnectedChannel[] = [
@@ -162,6 +235,14 @@ function demoUser(): PersistedUser {
     language: "ar",
     currency: "IQD",
     theme: "dark",
+    coupons: [
+      { id: "c-welcome", code: "WELCOME10", percent: 10, active: true, used: 0, maxUses: 100 },
+    ],
+    notifications: [
+      { id: "n1", title: "رسالة جديدة من إنستغرام (@ali_iq)", time: "منذ دقيقتين", read: false, type: "message", href: "/chatbot" },
+      { id: "n2", title: "تم تسجيل طلب جديد من لوحة المتجر", time: "منذ 15 دقيقة", read: false, type: "order", href: "/orders" },
+      { id: "n3", title: "تم تفعيل الرد التلقائي لقناة إنستغرام", time: "منذ ساعة", read: true, type: "system", href: "/channels" },
+    ],
   }
 }
 
@@ -220,11 +301,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const activeTheme = current?.theme ?? theme
     const root = document.documentElement
-    if (activeTheme === "dark") {
-      root.classList.add("dark")
-    } else {
-      root.classList.remove("dark")
+    const apply = (mode: string) => {
+      if (mode === "dark") root.classList.add("dark")
+      else root.classList.remove("dark")
     }
+    if (activeTheme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)")
+      apply(mq.matches ? "dark" : "light")
+      const listener = (e: MediaQueryListEvent) => apply(e.matches ? "dark" : "light")
+      mq.addEventListener("change", listener)
+      return () => mq.removeEventListener("change", listener)
+    }
+    apply(activeTheme)
   }, [current?.theme, theme])
 
   const commit = useCallback(
@@ -251,6 +339,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const navigateTo = useCallback((tab: string, searchQuery: string = "") => {
     setActiveTab(tab)
     setGlobalSearchQuery(searchQuery)
+    if (typeof window !== "undefined") {
+      const path = TAB_PATHS[tab] || "/"
+      if (window.location.pathname !== path) {
+        window.dispatchEvent(new CustomEvent("elite-navigate", { detail: { tab, path, searchQuery } }))
+      }
+    }
   }, [])
 
   const setLanguage = useCallback(
@@ -288,19 +382,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const register = useCallback(
-    async (name: string, email: string, password: string) => {
+    async (name: string, email: string, password: string, extra?: { storeName?: string; phone?: string }) => {
       const exists = users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())
       if (exists) return "هذا البريد مسجّل مسبقًا"
-      const defaultPlan = plans[0] // Starter plan
+      const defaultPlan = plans[0]
       const user: PersistedUser = {
         id: uid("user"),
-        name: name.trim(),
+        name: name.trim() || extra?.storeName?.trim() || "تاجر جديد",
         email: email.trim().toLowerCase(),
         password,
         merchant: {
-          storeName: "",
-          slug: "",
-          phone: "",
+          storeName: extra?.storeName?.trim() || "",
+          slug: (extra?.storeName || name || "store").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24),
+          phone: extra?.phone || "",
+          ownerName: name.trim(),
+          contactEmail: email.trim().toLowerCase(),
           plan: defaultPlan.name,
           activePlanId: defaultPlan.id,
           aiModel: defaultPlan.aiModel,
@@ -308,6 +404,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           aiTokenLimit: defaultPlan.monthlyTokenLimit,
           ready: false,
           address: emptyAddress(),
+          notifications: {
+            emailNewOrder: true,
+            soundNotification: true,
+            whatsappMerchantAlert: true,
+            highRiskAlert: true,
+          },
         },
         channels: CHANNEL_CATALOG.map((c) => ({ ...c })),
         orders: [],
@@ -316,11 +418,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
         language: "ar",
         currency: "IQD",
         theme: "dark",
+        coupons: [{ id: uid("c"), code: "START10", percent: 10, active: true, used: 0, maxUses: 50 }],
+        notifications: [
+          {
+            id: uid("n"),
+            title: "مرحباً بك في إيليت العراق — أكمل إعداد المتجر وربط القنوات",
+            time: "الآن",
+            read: false,
+            type: "system",
+            href: "/onboarding",
+          },
+        ],
       }
       commit([...users, user], user.id)
       return null
     },
     [commit, users]
+  )
+
+  const sendLocalOtp = useCallback(async (phone: string) => {
+    const clean = phone.replace(/\D/g, "")
+    if (!/^(0)?(77|78|79|75)\d{8}$/.test(clean)) return "يرجى كتابة رقم هاتف عراقي صحيح"
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("elite-otp-phone", clean)
+      sessionStorage.setItem("elite-otp-code", LOCAL_OTP)
+    }
+    return null
+  }, [])
+
+  const loginWithPhone = useCallback(
+    async (phone: string, otp: string) => {
+      const clean = phone.replace(/\D/g, "")
+      const expected = typeof window !== "undefined" ? sessionStorage.getItem("elite-otp-code") : LOCAL_OTP
+      if (otp.trim() !== (expected || LOCAL_OTP)) return "رمز التحقق غير صحيح. الرمز التجريبي: 123456"
+      const email = `${clean}@phone.elite.iq`
+      const found = users.find((u) => u.email === email || u.merchant.phone.replace(/\D/g, "") === clean)
+      if (found) {
+        commit(users, found.id)
+        return null
+      }
+      return register(clean, email, `phone-${clean}`, { phone: clean, storeName: "" })
+    },
+    [commit, register, users]
   )
 
   const logout = useCallback(() => {
@@ -418,17 +557,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addOrder = useCallback(
     (order: Omit<Order, "id" | "date">) => {
-      patchCurrent((u) => ({
-        ...u,
-        orders: [
-          {
-            ...order,
-            id: `#${3400 + u.orders.length + 18}`,
-            date: new Date().toLocaleDateString("ar-IQ", { day: "numeric", month: "long" }),
-          },
-          ...u.orders,
-        ],
-      }))
+      patchCurrent((u) => {
+        const id = `#${3400 + u.orders.length + 18}`
+        const note: AppNotification = {
+          id: uid("n"),
+          title: `طلب جديد ${id} من ${order.customer} بقيمة ${order.amount.toLocaleString("ar-IQ")} د.ع`,
+          time: "الآن",
+          read: false,
+          type: "order",
+          href: "/orders",
+        }
+        return {
+          ...u,
+          orders: [
+            {
+              ...order,
+              id,
+              date: new Date().toLocaleDateString("ar-IQ", { day: "numeric", month: "long" }),
+            },
+            ...u.orders,
+          ],
+          notifications: [note, ...(u.notifications ?? [])].slice(0, 40),
+        }
+      })
     },
     [patchCurrent]
   )
@@ -542,6 +693,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [patchCurrent]
   )
 
+  const addCoupon = useCallback(
+    (coupon: Omit<Coupon, "id" | "used">) => {
+      patchCurrent((u) => ({
+        ...u,
+        coupons: [{ ...coupon, id: uid("c"), used: 0 }, ...(u.coupons ?? [])],
+      }))
+    },
+    [patchCurrent]
+  )
+
+  const toggleCoupon = useCallback(
+    (id: string) => {
+      patchCurrent((u) => ({
+        ...u,
+        coupons: (u.coupons ?? []).map((c) => (c.id === id ? { ...c, active: !c.active } : c)),
+      }))
+    },
+    [patchCurrent]
+  )
+
+  const deleteCoupon = useCallback(
+    (id: string) => {
+      patchCurrent((u) => ({
+        ...u,
+        coupons: (u.coupons ?? []).filter((c) => c.id !== id),
+      }))
+    },
+    [patchCurrent]
+  )
+
+  const applyCoupon = useCallback(
+    (code: string) => {
+      if (!current) return null
+      const found = (current.coupons ?? []).find((c) => c.active && c.code.toLowerCase() === code.trim().toLowerCase() && c.used < c.maxUses)
+      if (!found) return null
+      patchCurrent((u) => ({
+        ...u,
+        coupons: (u.coupons ?? []).map((c) => (c.id === found.id ? { ...c, used: c.used + 1 } : c)),
+      }))
+      return found
+    },
+    [current, patchCurrent]
+  )
+
+  const pushNotification = useCallback(
+    (item: Omit<AppNotification, "id" | "time" | "read">) => {
+      const next: AppNotification = {
+        ...item,
+        id: uid("n"),
+        read: false,
+        time: new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
+      }
+      patchCurrent((u) => ({
+        ...u,
+        notifications: [next, ...(u.notifications ?? [])].slice(0, 40),
+      }))
+    },
+    [patchCurrent]
+  )
+
+  const markNotificationRead = useCallback(
+    (id: string) => {
+      patchCurrent((u) => ({
+        ...u,
+        notifications: (u.notifications ?? []).map((n) => (n.id === id ? { ...n, read: true } : n)),
+      }))
+    },
+    [patchCurrent]
+  )
+
+  const markAllNotificationsRead = useCallback(() => {
+    patchCurrent((u) => ({
+      ...u,
+      notifications: (u.notifications ?? []).map((n) => ({ ...n, read: true })),
+    }))
+  }, [patchCurrent])
+
+  const clearNotifications = useCallback(() => {
+    patchCurrent((u) => ({ ...u, notifications: [] }))
+  }, [patchCurrent])
+
   const value = useMemo<AppState>(
     () => ({
       ready,
@@ -551,6 +783,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       orders: current?.orders ?? [],
       products: current?.products ?? [],
       rules: current?.rules ?? [],
+      coupons: current?.coupons ?? [],
+      notificationsInbox: current?.notifications ?? [],
       language: current?.language ?? language,
       currency: current?.currency ?? currency,
       theme: current?.theme ?? theme,
@@ -566,6 +800,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrency,
       setTheme,
       login,
+      loginWithPhone,
+      sendLocalOtp,
       register,
       logout,
       completeOnboarding,
@@ -585,12 +821,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleRule,
       deleteRule,
       incrementRuleHits,
+      addCoupon,
+      toggleCoupon,
+      deleteCoupon,
+      applyCoupon,
+      pushNotification,
+      markNotificationRead,
+      markAllNotificationsRead,
+      clearNotifications,
     }),
     [
       activeTab,
       globalSearchQuery,
       navigateTo,
       addOrder,
+      addCoupon,
+      applyCoupon,
+      loginWithPhone,
+      sendLocalOtp,
+      pushNotification,
+      markNotificationRead,
+      markAllNotificationsRead,
+      clearNotifications,
+      toggleCoupon,
+      deleteCoupon,
       addProduct,
       addRule,
       completeOnboarding,
@@ -630,4 +884,4 @@ export function useApp() {
   return ctx
 }
 
-export { DEMO_EMAIL, DEMO_PASSWORD }
+export { DEMO_EMAIL, DEMO_PASSWORD, LOCAL_OTP }

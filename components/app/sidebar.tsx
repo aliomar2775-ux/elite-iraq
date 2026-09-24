@@ -78,7 +78,7 @@ export function SidebarContent({
 
         <p className="px-3 pb-2 pt-6 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">عام</p>
         {secondary.map((item) => (
-          <NavItem key={item.label} {...item} active={false} onNavigate={onNavigate} />
+          <NavItem key={item.label} {...item} active={!item.external && pathname === item.href} onNavigate={onNavigate} />
         ))}
       </nav>
 

@@ -1,10 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, ArrowRight, LayoutDashboard } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { X, ArrowRight } from "lucide-react"
 import { SidebarContent } from "@/components/app/sidebar"
 import { Topbar } from "@/components/app/topbar"
 import { cn } from "@/lib/utils"
+import { TAB_PATHS, pathToTab } from "@/lib/navigation"
+import { useApp } from "@/lib/app-state"
 
 interface AppShellProps {
   children: React.ReactNode
@@ -14,42 +17,56 @@ interface AppShellProps {
 
 export function AppShell({ children, activeTab, onSelectTab }: AppShellProps) {
   const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+  const router = useRouter()
+  const { setActiveTab } = useApp()
+  const currentTab = activeTab || pathToTab(pathname)
 
-  // الاستماع لحدث التبديل التلقائي المباشر من أي مكون (البحث، الإشعارات، البروفايل)
+  useEffect(() => {
+    setActiveTab(currentTab)
+  }, [currentTab, setActiveTab])
+
+  const goToTab = (tab: string) => {
+    setActiveTab(tab)
+    onSelectTab?.(tab)
+    router.push(TAB_PATHS[tab] || "/")
+  }
+
   useEffect(() => {
     const handleSwitchTab = (e: Event) => {
       const customEvent = e as CustomEvent<string>
-      if (customEvent.detail && onSelectTab) {
-        onSelectTab(customEvent.detail)
-      }
+      if (customEvent.detail) goToTab(customEvent.detail)
     }
-
+    const handleEliteNav = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tab: string; path: string }>
+      if (customEvent.detail?.path) router.push(customEvent.detail.path)
+    }
     window.addEventListener("switch-tab", handleSwitchTab)
-    return () => window.removeEventListener("switch-tab", handleSwitchTab)
-  }, [onSelectTab])
+    window.addEventListener("elite-navigate", handleEliteNav)
+    return () => {
+      window.removeEventListener("switch-tab", handleSwitchTab)
+      window.removeEventListener("elite-navigate", handleEliteNav)
+    }
+  }, [router])
 
-  // التحقق مما إذا كنا في صفحة فرعية لتقديم خيار الرجوع
-  const isSubPage = activeTab && activeTab !== "dashboard" && activeTab !== "overview" && activeTab !== "/"
+  const isSubPage = pathname !== "/"
 
   const handleGoBack = () => {
-    if (onSelectTab) {
-      onSelectTab("dashboard")
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back()
+      return
     }
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("switch-tab", { detail: "dashboard" }))
-    }
+    goToTab("dashboard")
   }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground rtl">
-      {/* القائمة الجانبية للشاشات الكبيرة */}
       <aside className="hidden w-64 shrink-0 border-l border-sidebar-border bg-sidebar md:block">
         <div className="sticky top-0 h-screen">
           <SidebarContent />
         </div>
       </aside>
 
-      {/* درج الجوال للشاشات الصغيرة */}
       <div
         className={cn(
           "fixed inset-0 z-50 md:hidden",
@@ -80,14 +97,9 @@ export function AppShell({ children, activeTab, onSelectTab }: AppShellProps) {
         </aside>
       </div>
 
-      {/* المحتوى الرئيسي والشريط العلوي */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          onMenu={() => setOpen(true)}
-          onSelectTab={onSelectTab}
-        />
+        <Topbar onMenu={() => setOpen(true)} onSelectTab={goToTab} />
 
-        {/* 🎯 شريط رجوع سريع يظهر حصراً في الصفحات الفرعية */}
         {isSubPage && (
           <div className="bg-card/50 border-b border-border px-4 py-2.5 sm:px-6 flex items-center justify-between backdrop-blur-sm">
             <button
@@ -95,11 +107,14 @@ export function AppShell({ children, activeTab, onSelectTab }: AppShellProps) {
               className="inline-flex items-center gap-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-bold transition-all border border-primary/20"
             >
               <ArrowRight className="h-4 w-4" />
-              <span>الرجوع إلى نظرة عامة</span>
+              <span>رجوع</span>
             </button>
-            <span className="text-[11px] text-muted-foreground font-mono">
-              التبويب الحالي: {activeTab}
-            </span>
+            <button
+              onClick={() => goToTab("dashboard")}
+              className="text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              نظرة عامة
+            </button>
           </div>
         )}
 
