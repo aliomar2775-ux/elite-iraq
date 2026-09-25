@@ -402,9 +402,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ==========================================
   // دوال التحكم للسوبر أدمن (Super Admin)
+  // 👈 كل دالة هنا محمية بشرط isAdmin على مستوى المنطق نفسه،
+  // وليس فقط عبر إخفاء الزر أو الصفحة في الواجهة
   // ==========================================
   const adminChangeMerchantPlan = useCallback(
     (userId: string, planId: string) => {
+      if (!isAdmin) return
       const selectedPlan = plans.find((p) => p.id === planId)
       if (!selectedPlan) return
       commit(
@@ -424,11 +427,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sessionId
       )
     },
-    [commit, sessionId, users]
+    [isAdmin, commit, sessionId, users]
   )
 
   const adminResetMerchantTokens = useCallback(
     (userId: string) => {
+      if (!isAdmin) return
       commit(
         users.map((u) =>
           u.id === userId
@@ -444,11 +448,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sessionId
       )
     },
-    [commit, sessionId, users]
+    [isAdmin, commit, sessionId, users]
   )
 
   const adminToggleMerchantStatus = useCallback(
     (userId: string) => {
+      if (!isAdmin) return
       commit(
         users.map((u) =>
           u.id === userId
@@ -464,18 +469,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sessionId
       )
     },
-    [commit, sessionId, users]
+    [isAdmin, commit, sessionId, users]
   )
 
   const adminImpersonateMerchant = useCallback(
     (userId: string) => {
+      if (!isAdmin) return
       commit(users, userId)
     },
-    [commit, users]
+    [isAdmin, commit, users]
   )
 
   const adminBroadcastNotification = useCallback(
     (title: string, message: string) => {
+      if (!isAdmin) return
       const nextUsers = users.map((u) => {
         const note: AppNotification = {
           id: uid("n"),
@@ -491,7 +498,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       commit(nextUsers, sessionId)
     },
-    [commit, sessionId, users]
+    [isAdmin, commit, sessionId, users]
   )
 
   const setLanguage = useCallback(

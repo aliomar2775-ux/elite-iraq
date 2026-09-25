@@ -5,7 +5,7 @@ import { AdminView } from "@/components/app/admin-view"
 import { AlertTriangle, Loader2 } from "lucide-react"
 
 export default function AdminPage() {
-  const { ready, user } = useApp()
+  const { ready, isAdmin } = useApp()
 
   if (!ready) {
     return (
@@ -15,8 +15,8 @@ export default function AdminPage() {
     )
   }
 
-  // حماية صارمة لضمان عدم وصول أي مستخدم عادي
-  if (user?.email?.toLowerCase() !== "demo@elite.iq") {
+  // حماية صارمة: نعتمد على isAdmin القادمة من app-state (مصدر حقيقة واحد)
+  if (!isAdmin) {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center text-center p-6 rtl">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
