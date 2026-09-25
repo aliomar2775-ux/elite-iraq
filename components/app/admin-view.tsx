@@ -20,8 +20,8 @@ import {
   Activity,
   Globe,
   Crown,
-  ArrowRight,
   LayoutGrid,
+  ArrowRight,
 } from "lucide-react"
 
 export function AdminView() {
@@ -88,11 +88,11 @@ export function AdminView() {
 
   return (
     <div className="space-y-8 p-6 rtl">
-      {/* 👈 شريط الأزرار العلوي (الرئيسية ورجوع) تماماً مثل باقي الصفحات */}
-      <div className="flex items-center justify-between gap-4">
+      {/* 👈 أزرار التنقل (الرئيسية ورجوع) مطابقة تماماً لبقية الصفحات ومفعلة بالكامل */}
+      <div className="flex items-center justify-between mb-2">
         <button
           onClick={() => navigateTo("dashboard")}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer shadow-xs"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
         >
           <LayoutGrid className="h-4 w-4 text-primary" />
           <span>الرئيسية</span>
@@ -100,7 +100,7 @@ export function AdminView() {
 
         <button
           onClick={() => window.history.back()}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer shadow-xs"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
         >
           <span>رجوع</span>
           <ArrowRight className="h-4 w-4" />
