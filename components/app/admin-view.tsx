@@ -20,6 +20,8 @@ import {
   Activity,
   Globe,
   Crown,
+  ArrowRight,
+  LayoutGrid,
 } from "lucide-react"
 
 export function AdminView() {
@@ -32,6 +34,7 @@ export function AdminView() {
     adminToggleMerchantStatus,
     adminImpersonateMerchant,
     adminBroadcastNotification,
+    navigateTo,
   } = useApp()
 
   const [searchQuery, setSearchQuery] = useState("")
@@ -85,6 +88,25 @@ export function AdminView() {
 
   return (
     <div className="space-y-8 p-6 rtl">
+      {/* 👈 شريط الأزرار العلوي (الرئيسية ورجوع) تماماً مثل باقي الصفحات */}
+      <div className="flex items-center justify-between gap-4">
+        <button
+          onClick={() => navigateTo("dashboard")}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer shadow-xs"
+        >
+          <LayoutGrid className="h-4 w-4 text-primary" />
+          <span>الرئيسية</span>
+        </button>
+
+        <button
+          onClick={() => window.history.back()}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer shadow-xs"
+        >
+          <span>رجوع</span>
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
       {/* الترويسة العليا */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-5">
         <div>
