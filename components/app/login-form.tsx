@@ -3,20 +3,20 @@
 import Link from "next/link"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Store, Loader2, AlertCircle, Phone, Mail, ArrowLeft, ShieldCheck } from "lucide-react"
-import { DEMO_EMAIL, DEMO_PASSWORD, LOCAL_OTP, useApp } from "@/lib/app-state"
+import { Store, Loader2, AlertCircle, Phone, Mail, ArrowLeft, UserCheck } from "lucide-react"
+import { LOCAL_OTP, useApp } from "@/lib/app-state"
 import { cn } from "@/lib/utils"
 
 export function LoginForm() {
-  const { login, loginWithPhone, sendLocalOtp } = useApp()
+  const { login, loginWithPhone, sendLocalOtp, register } = useApp()
   const router = useRouter()
 
   // نمط التسجيل: بريد إلكتروني أو رقم هاتف
   const [authMode, setAuthMode] = useState<"email" | "phone">("email")
 
-  // حالات البريد وكلمة المرور
-  const [email, setEmail] = useState(DEMO_EMAIL)
-  const [password, setPassword] = useState(DEMO_PASSWORD)
+  // حالات البريد وكلمة المرور (تبدأ فارغة تماماً لضمان عدم الدخول التلقائي كأدمن)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
 
   // حالات الدخول برقم الهاتف
   const [phone, setPhone] = useState("07701230000")
@@ -26,12 +26,26 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  // تعبئة البيانات التجريبية بنقرة واحدة
-  const fillDemoAccount = () => {
-    setAuthMode("email")
-    setEmail(DEMO_EMAIL)
-    setPassword(DEMO_PASSWORD)
+  // 👈 دخول تجريبي بحساب عادي ومقيد تماماً (ليس أدمن)
+  const fillSandboxDemo = async () => {
+    setPending(true)
     setError(null)
+    const demoEmail = "sandbox@elite.iq"
+    const demoPass = "Demo12345"
+    
+    // محاولة تسجيل الدخول بحساب تجريبي عادي، وإن لم يكن موجوداً يتم إنشاؤه تلقائياً
+    let message = await login(demoEmail, demoPass)
+    if (message) {
+      await register("متجر تجريبي زائر", demoEmail, demoPass, { storeName: "متجر المعاينة", phone: "07700000000" })
+      message = await login(demoEmail, demoPass)
+    }
+
+    setPending(false)
+    if (message) {
+      setError(message)
+      return
+    }
+    router.replace("/")
   }
 
   // معالجة الدخول بالبريد
@@ -267,18 +281,17 @@ export function LoginForm() {
         </form>
       )}
 
-      {/* زر التعبئة السريعة للحساب التجريبي */}
-      <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-center">
-        <p className="text-xs text-muted-foreground mb-2">
-          بيانات الحساب التجريبي: <strong className="font-mono text-foreground">{DEMO_EMAIL}</strong>
-        </p>
+      {/* زر المعاينة التجريبية الآمنة (بدون صلاحيات أدمن) */}
+      <div className="mt-5 rounded-xl border border-border bg-muted/30 p-3 text-center">
+        <p className="text-xs text-muted-foreground mb-2">تريد تجربة المنصة كمستخدم عادي؟</p>
         <button
           type="button"
-          onClick={fillDemoAccount}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline cursor-pointer"
+          onClick={fillSandboxDemo}
+          disabled={pending}
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
         >
-          <ShieldCheck className="h-4 w-4" />
-          تعبئة بيانات الحساب التجريبي بنقرة واحدة
+          <UserCheck className="h-4 w-4 text-emerald-500" />
+          <span>الدخول بوضع المعاينة التجريبية (بدون أدمن)</span>
         </button>
       </div>
 

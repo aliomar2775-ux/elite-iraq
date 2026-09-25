@@ -279,7 +279,7 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      // 👈 تم ضبط الجلسة الافتتاحية لتكون فارغة تماماً (null) لعدم فرض الأدمن
+      // 👈 تم ضبط الجلسة لتكون فارغة تماماً عند أول تشغيل لعدم فرض الأدمن
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null }))
       return seeded
     }
@@ -294,7 +294,7 @@ function loadSessionId(): string | null {
   if (typeof window === "undefined") return null
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null // 👈 إرجاع null بدلاً من معرف الأدمن الوهمي
+    if (!raw) return null // 👈 إرجاع null لمنع أي جلسة وهمية
     const parsed = JSON.parse(raw) as { sessionId?: string | null }
     return parsed.sessionId !== undefined ? parsed.sessionId : null
   } catch {
