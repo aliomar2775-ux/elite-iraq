@@ -102,17 +102,24 @@ export type MerchantProfile = {
   storeAddressText?: string
   plan: string
   activePlanId: string
-  aiModel: "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-1.5-flash" | "gemini-1.5-pro"
+  aiModel: "gemini-3.8-flash" | "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-1.5-flash" | "gemini-1.5-pro"
   aiTokensUsed: number
   aiTokenLimit: number
   currency?: "IQD" | "USD"
   address: Address
   ready: boolean
+  telegramBotToken?: string
+  telegramChatId?: string
   notifications?: NotificationPrefs
   telegramSettings?: TelegramSettings
   businessHours?: BusinessHours
   autoBackup?: AutoBackup
   antiSpam?: AntiSpam
+  settings?: {
+    telegramBotToken?: string
+    telegramChatId?: string
+    [key: string]: any
+  }
 }
 
 type PersistedUser = SessionUser & {
@@ -211,11 +218,13 @@ function demoUser(): PersistedUser {
       phone: "07701230000",
       plan: defaultPlan.name,
       activePlanId: defaultPlan.id,
-      aiModel: defaultPlan.aiModel,
+      aiModel: "gemini-3.8-flash",
       aiTokensUsed: 120000,
       aiTokenLimit: defaultPlan.monthlyTokenLimit,
       currency: "IQD",
       ready: true,
+      telegramBotToken: "",
+      telegramChatId: "",
       address: {
         governorate: "بغداد",
         city: "الكرخ",
@@ -254,7 +263,8 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null }))
+      // ابدأ مع الديمو مسجل دخوله تلقائياً للمعاينة الأولى
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: "user-demo" }))
       return seeded
     }
     const parsed = JSON.parse(raw) as { users: PersistedUser[] }
@@ -268,8 +278,9 @@ function loadSessionId(): string | null {
   if (typeof window === "undefined") return null
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return (JSON.parse(raw) as { sessionId?: string | null }).sessionId ?? null
+    if (!raw) return "user-demo"
+    const parsed = JSON.parse(raw) as { sessionId?: string | null }
+    return parsed.sessionId !== undefined ? parsed.sessionId : "user-demo"
   } catch {
     return null
   }
@@ -280,7 +291,7 @@ function persist(users: PersistedUser[], sessionId: string | null) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ users, sessionId }))
   } catch {
-    // يتجاهل الأخطاء إذا كانت مساحة التخزين ممتلئة أو غير متاحة
+    // يتجاهل الأخطاء إذا كانت مساحة التخزين ممتلئة
   }
 }
 
@@ -418,11 +429,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           contactEmail: email.trim().toLowerCase(),
           plan: defaultPlan.name,
           activePlanId: defaultPlan.id,
-          aiModel: defaultPlan.aiModel,
+          aiModel: "gemini-3.8-flash",
           aiTokensUsed: 0,
           aiTokenLimit: defaultPlan.monthlyTokenLimit,
           currency: "IQD",
           ready: false,
+          telegramBotToken: "",
+          telegramChatId: "",
           address: emptyAddress(),
           notifications: {
             emailNewOrder: true,
@@ -529,7 +542,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...u.merchant,
           plan: selectedPlan.name,
           activePlanId: selectedPlan.id,
-          aiModel: selectedPlan.aiModel,
+          aiModel: "gemini-3.8-flash",
           aiTokenLimit: selectedPlan.monthlyTokenLimit,
           aiTokensUsed: 0,
         },

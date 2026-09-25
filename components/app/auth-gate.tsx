@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import React, { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { useApp } from "@/lib/app-state"
 import { Loader2 } from "lucide-react"
@@ -46,17 +46,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [cleanPathname, isPublic, merchant?.ready, ready, router, user])
 
-  // شاشة الانتظار الاحترافية أثناء جلب الجلسة والتأكد من البيانات
+  // شاشة الانتظار الاحترافية أثناء جلب الجلسة المحفوظة والتأكد من البيانات
   if (!ready) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background text-sm text-muted-foreground rtl">
         <Loader2 className="h-7 w-7 animate-spin text-primary" />
-        <span className="font-medium animate-pulse">جارٍ تحضير لوحة التحكم...</span>
+        <span className="font-medium animate-pulse">جارٍ التحقق من جلسة التاجر...</span>
       </div>
     )
   }
 
-  // منع الرندر اللحظي (Render Guards) لتفادي الوميض قبل التوجيه
+  // حماية الرندر اللحظي (Render Guards) لتفادي الوميض قبل التوجيه
   if (!user && !isPublic) return null
   if (user && isPublic) return null
   if (user && !merchant?.ready && cleanPathname !== "/onboarding") return null
