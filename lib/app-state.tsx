@@ -279,7 +279,8 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: "user-demo" }))
+      // 👈 تم ضبط الجلسة الافتتاحية لتكون فارغة تماماً (null) لعدم فرض الأدمن
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null }))
       return seeded
     }
     const parsed = JSON.parse(raw) as { users: PersistedUser[] }
@@ -293,9 +294,9 @@ function loadSessionId(): string | null {
   if (typeof window === "undefined") return null
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return "user-demo"
+    if (!raw) return null // 👈 إرجاع null بدلاً من معرف الأدمن الوهمي
     const parsed = JSON.parse(raw) as { sessionId?: string | null }
-    return parsed.sessionId !== undefined ? parsed.sessionId : "user-demo"
+    return parsed.sessionId !== undefined ? parsed.sessionId : null
   } catch {
     return null
   }
@@ -401,9 +402,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [patchCurrent])
 
   // ==========================================
-  // دوال التحكم للسوبر أدمن (Super Admin)
-  // 👈 كل دالة هنا محمية بشرط isAdmin على مستوى المنطق نفسه،
-  // وليس فقط عبر إخفاء الزر أو الصفحة في الواجهة
+  // دوال التحكم للسوبر أدمن (Super Admin) - محمية تماماً بالمنطق
   // ==========================================
   const adminChangeMerchantPlan = useCallback(
     (userId: string, planId: string) => {
