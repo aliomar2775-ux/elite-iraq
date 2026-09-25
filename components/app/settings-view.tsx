@@ -26,6 +26,7 @@ import {
 import { useApp } from "@/lib/app-state"
 import { cn } from "@/lib/utils"
 import { sendTelegramMessage } from "@/lib/integrations"
+import { playSaveSuccessSound } from "@/lib/sound" // 👈 1. استيراد دالة الصوت الناعم
 
 interface OrderExportRow {
   id: string
@@ -99,29 +100,6 @@ export function SettingsView() {
     }
   }, [merchant, merchantEmail, merchantOwnerName])
 
-  // 🔔 تشغيل الصوت التنبيهي للمتصفح بدون any
-  const playSoundEffect = () => {
-    try {
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      if (!AudioContextClass) return
-
-      const audioCtx = new AudioContextClass()
-      const osc = audioCtx.createOscillator()
-      const gain = audioCtx.createGain()
-      osc.type = "sine"
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime)
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime)
-      osc.connect(gain)
-      gain.connect(audioCtx.destination)
-      osc.start()
-      osc.stop(audioCtx.currentTime + 0.2)
-    } catch {
-      console.log("Audio play policy restriction")
-    }
-  }
-
   // 📊 تصدير ملف البيانات للتحميل المباشر
   const handleExportData = () => {
     const dataRows: OrderExportRow[] =
@@ -177,8 +155,9 @@ export function SettingsView() {
       antiSpam,
     } as any)
 
+    // 🔊 2. تشغيل نغمة النجاح الناعمة فور الضغط على الحفظ
     if (soundNotification) {
-      playSoundEffect()
+      playSaveSuccessSound()
     }
 
     if (telegramSettings.enabled && telegramSettings.botToken && telegramSettings.chatId) {
@@ -373,7 +352,7 @@ export function SettingsView() {
               checked={soundNotification}
               onChange={(e) => {
                 setSoundNotification(e.target.checked)
-                if (e.target.checked) playSoundEffect()
+                if (e.target.checked) playSaveSuccessSound()
               }}
               className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
             />
