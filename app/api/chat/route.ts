@@ -113,6 +113,12 @@ export async function POST(request: Request) {
     let senderId = ""
     let platform = "chat_preview"
 
+    // استخراج إعدادات التليجرام الممررة الخاصة بالتاجر صاحبة هذا المتجر
+    const merchantTelegramConfig = {
+      botToken: body.telegramConfig?.botToken || body.telegramBotToken || body.settings?.telegramBotToken,
+      chatId: body.telegramConfig?.chatId || body.telegramChatId || body.settings?.telegramChatId,
+    }
+
     // دعم طلبات المعاينة المباشرة أو Webhooks المنصات المختلفة
     if (typeof body.message === "string") {
       userMessage = body.message
@@ -257,7 +263,7 @@ ${JSON.stringify(storeProducts, null, 2)}
       console.error("خطأ في تحليل استجابة JSON من Gemini:", parseError)
     }
 
-    // التحقق المباشر من صحة رقم الهاتف العراقي وإرسال إشعار التليجرام عند اكتمال الطلب
+    // التحقق المباشر من صحة رقم الهاتف العراقي وإرسال إشعار التليجرام لبوّت التاجر المحدد
     if (parsedData.isOrderCompleted && parsedData.extractedData?.customerPhone) {
       if (!isValidIraqiPhone(parsedData.extractedData.customerPhone)) {
         parsedData.isOrderCompleted = false
@@ -266,16 +272,23 @@ ${JSON.stringify(storeProducts, null, 2)}
       } else {
         console.log(`🚀 [طلب جديد مكتمل عبر ${platform} - ID: ${senderId}] للزبون:`, parsedData.extractedData)
 
-        // 🚀 إرسال إشعار التليجرام الفوري مع بيانات الطلب والمصدر
-        const orderId = Math.floor(10000 + Math.random() * 90000).toString()
-        await sendTelegramOrderNotification({
-          id: orderId,
-          customerName: parsedData.extractedData.customerName || "زبون جديد",
-          phone: parsedData.extractedData.customerPhone,
-          address: parsedData.extractedData.customerAddress || "غير محدد",
-          items: `طلب مؤكد عبر منصة (${platform})`,
-          totalAmount: "حسب طلب الشات بوت",
-        })
+        // إرسال الإشعار لبوّت التاجر فقط إذا قام التاجر بإدخال إعدادات التليجرام في متجره
+        if (merchantTelegramConfig.botToken && merchantTelegramConfig.chatId) {
+          const orderId = Math.floor(10000 + Math.random() * 90000).toString()
+          await sendTelegramOrderNotification(
+            {
+              id: orderId,
+              customerName: parsedData.extractedData.customerName || "زبون جديد",
+              phone: parsedData.extractedData.customerPhone,
+              address: parsedData.extractedData.customerAddress || "غير محدد",
+              items: `طلب مؤكد عبر منصة (${platform})`,
+              totalAmount: "حسب طلب الشات بوت",
+            },
+            merchantTelegramConfig
+          )
+        } else {
+          console.log("ℹ️ لم يتم إرسال إشعار تليجرام: التاجر لم يقم بضبط Bot Token / Chat ID في صفحة الإعدادات.")
+        }
       }
     }
 

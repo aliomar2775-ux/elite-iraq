@@ -16,41 +16,26 @@ export interface OrderNotificationPayload {
   status?: string
 }
 
-// القيم الافتراضية للبوت والشات الخاصين بك مع التوافق مع متغيرات البيئة
-const DEFAULT_BOT_TOKEN =
-  process.env.TELEGRAM_BOT_TOKEN ||
-  process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN ||
-  "703073936:AAF_702bMK5my0zP_UfFDBUOxeB6TJKEKaI"
-
-const DEFAULT_CHAT_ID =
-  process.env.TELEGRAM_CHAT_ID ||
-  process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID ||
-  "224536870"
-
 /**
- * دالة إرسال رسالة عامة عبر بوت التليجرام
+ * دالة إرسال رسالة عامة عبر بوت تليجرام التاجر
  */
 export async function sendTelegramMessage(
-  config?: Partial<TelegramConfig>,
-  message?: string
+  config: TelegramConfig,
+  message: string
 ) {
-  const botToken = config?.botToken || DEFAULT_BOT_TOKEN
-  const chatId = config?.chatId || DEFAULT_CHAT_ID
-  const textToSend = message || ""
-
-  if (!botToken || !chatId) {
-    console.warn("Telegram Bot Token or Chat ID is missing")
-    return { success: false, error: "Missing config" }
+  if (!config?.botToken || !config?.chatId) {
+    console.warn("لم يتم إرسال الإشعار: التاجر لم يقم بتكثيف إعدادات التليجرام الخاصة بمتجره.")
+    return { success: false, error: "Missing merchant Telegram config" }
   }
 
   try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`
+    const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
-        text: textToSend,
+        chat_id: config.chatId,
+        text: message,
         parse_mode: "HTML",
       }),
     })
@@ -58,17 +43,17 @@ export async function sendTelegramMessage(
     const data = await response.json()
     return { success: data.ok, data }
   } catch (error) {
-    console.error("Error sending Telegram notification:", error)
+    console.error("خطأ في إرسال إشعار تليجرام التاجر:", error)
     return { success: false, error }
   }
 }
 
 /**
- * دالة مخصصة لتنسيق وإرسال إشعار طلب جديد تلقائياً
+ * دالة تنسيق وإرسال طلب جديد إلى تليجرام التاجر المُنشيء للمتجر
  */
 export async function sendTelegramOrderNotification(
   order: OrderNotificationPayload,
-  customConfig?: Partial<TelegramConfig>
+  merchantConfig: TelegramConfig
 ) {
   const addressDetails = [order.governorate, order.address]
     .filter(Boolean)
@@ -87,5 +72,5 @@ export async function sendTelegramOrderNotification(
 ⏰ <i>تاريخ الطلب: ${new Date().toLocaleString("ar-IQ")}</i>
 `.trim()
 
-  return await sendTelegramMessage(customConfig, formattedMessage)
+  return await sendTelegramMessage(merchantConfig, formattedMessage)
 }
