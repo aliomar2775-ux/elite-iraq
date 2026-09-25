@@ -279,12 +279,17 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      // 👈 تم ضبط الجلسة لتكون فارغة تماماً عند أول تشغيل لعدم فرض الأدمن
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null }))
       return seeded
     }
     const parsed = JSON.parse(raw) as { users: PersistedUser[] }
-    return parsed.users ?? [demoUser()]
+    const users = parsed.users ?? [demoUser()]
+    
+    // 👈 التأكد الجذري من وجود حساب الأدمن دائماً ضمن قائمة المستخدمين المخزنة
+    if (!users.some((u) => u.email.toLowerCase() === DEMO_EMAIL.toLowerCase())) {
+      users.unshift(demoUser())
+    }
+    return users
   } catch {
     return [demoUser()]
   }
