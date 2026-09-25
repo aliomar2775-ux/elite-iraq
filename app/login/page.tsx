@@ -4,17 +4,10 @@
  * ============================================================================
  * منصة إيليت العراق (Elite Iraq) — صفحة تسجيل الدخول والتعريف بالمنصة
  * ============================================================================
- * الوظائف الرئيسية التي يتحكم بها هذا الملف:
- * 1. التوثيق بـ 3 طرق: (Email/Password, Phone OTP العراقي, Google OAuth).
- * 2. التوجيه التلقائي لمسار المعالجة /auth/callback بعد توثيق Google.
- * 3. حفظ بيانات التاجر واسم متجره في جدول merchants داخل Supabase.
- * 4. حاسبة تفاعلية للوقت الموفر والأرباح بناءً على حجم الرسائل.
- * 5. محاكي محادثة الذكاء الاصطناعي وتثبيت الطلبات لحظياً.
- * 6. النوافذ المنبثقة لسياسة الخصوصية وعزل بيانات المتاجر وشروط الخدمة.
- * ============================================================================
  */
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useApp } from "@/lib/app-state"
 import { supabase } from "@/lib/supabase"
 import {
@@ -103,6 +96,7 @@ const STEP_MS = 3600
 
 export default function LoginPage() {
   const { login, register } = useApp()
+  const router = useRouter()
 
   const [activeTab, setActiveTab] = useState<"preview" | "auth">("preview")
   const [authMethod, setAuthMethod] = useState<"email" | "phone" | "google">("email")
@@ -131,7 +125,6 @@ export default function LoginPage() {
   const savedHours = Math.round((dailyMessages * 3 * 30) / 60)
   const extraSales = Math.round(dailyMessages * 0.15 * 30)
 
-  // دالة مساعدة لتهيئة رقم الهاتف العراقي لصيغة الدولية (+964)
   const formatIraqiPhone = (rawPhone: string) => {
     let cleaned = rawPhone.replace(/\D/g, "")
     if (cleaned.startsWith("0")) cleaned = cleaned.substring(1)
@@ -139,7 +132,7 @@ export default function LoginPage() {
   }
 
   // --------------------------------------------------------------------------
-  // معالجة التسجيل والدخول عبر البريد الإلكتروني (Supabase Auth)
+  // معالجة التسجيل والدخول عبر البريد الإلكتروني (مع التوجيه المباشر للأدمن)
   // --------------------------------------------------------------------------
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,19 +140,25 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // 👈 التحقق المحلي المباشر لحساب الأدمن الحصري لتجنب خطأ Supabase
-      if (email.trim().toLowerCase() === "demo@elite.iq") {
-        if (password !== "Elite123") {
+      // 👈 الاعتماد حصرياً ومباشرة على متغيرات البيئة دون كتابة أي بيانات هنا
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+      const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD
+
+      if (adminEmail && email.trim().toLowerCase() === adminEmail.toLowerCase()) {
+        if (password !== adminPass) {
           setError("كلمة المرور الخاصة بالأدمن غير صحيحة")
           setLoading(false)
           return
         }
         await login(email, password)
         setLoading(false)
+        router.replace("/admin") // 🚀 التوجيه الفوري للوحة التحكم
         return
       }
 
-      // باقي المستخدمين يتم التحقق منهم عبر Supabase كالمعتاد
+      // باقي التجار والمستخدمين...
+
+      // باقي التجار والمستخدمين
       if (isRegistering) {
         if (!storeName.trim()) {
           setError("يرجى كتابة اسم متجرك")
@@ -203,9 +202,6 @@ export default function LoginPage() {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // معالجة التسجيل والدخول عبر رقم الهاتف العراقي (Supabase Phone OTP)
-  // --------------------------------------------------------------------------
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -227,7 +223,7 @@ export default function LoginPage() {
         if (otpError) throw otpError
         setOtpSent(true)
       } catch (err: any) {
-        setError(err.message || "فشل إرسال رمز التحقق SMS. تأكد من تفعيل الخدمة في Supabase")
+        setError(err.message || "فشل إرسال رمز التحقق SMS")
       } finally {
         setLoading(false)
       }
@@ -249,7 +245,6 @@ export default function LoginPage() {
           })
         }
 
-        // تسجيل الدخول بحساب زائر عادي وليس أدمن
         const demoEmail = "sandbox@elite.iq"
         const demoPass = "Demo12345"
         let msg = await login(demoEmail, demoPass)
@@ -265,9 +260,6 @@ export default function LoginPage() {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // معالجة التسجيل عبر Google (Supabase OAuth)
-  // --------------------------------------------------------------------------
   const handleGoogleLogin = async () => {
     setLoading(true)
     setError(null)
@@ -285,7 +277,6 @@ export default function LoginPage() {
     }
   }
 
-  // 👈 دخول تجريبي آمن ومعزول (بدون صلاحيات الأدمن تماماً)
   const handleQuickDemo = async () => {
     setLoading(true)
     setError(null)
@@ -315,7 +306,7 @@ export default function LoginPage() {
     "مخزون لحظي",
     "أرباح واضحة",
     "دعم جميع المحافظات",
-    "إنستغرام و واتساب و تيك توك و فيسبوك",
+    "إنستغرام وواتساب وتيك توك وفيسبوك",
     "بيانات معزولة لكل متجر",
   ]
 
@@ -801,7 +792,6 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                {/* 1. الدخول بالبريد ورقم المرور */}
                 {authMethod === "email" && (
                   <form onSubmit={handleEmailSubmit} className="space-y-4">
                     {isRegistering && (
@@ -865,7 +855,6 @@ export default function LoginPage() {
                   </form>
                 )}
 
-                {/* 2. الدخول برقم الهاتف العراقي */}
                 {authMethod === "phone" && (
                   <form onSubmit={handlePhoneSubmit} className="space-y-4">
                     {!otpSent ? (
@@ -903,7 +892,6 @@ export default function LoginPage() {
                   </form>
                 )}
 
-                {/* 3. الدخول بواسطة حساب Google */}
                 {authMethod === "google" && (
                   <div className="space-y-4 text-center">
                     <p className="text-xs text-muted-foreground leading-loose">

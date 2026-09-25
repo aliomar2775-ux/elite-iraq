@@ -88,11 +88,11 @@ export function AdminView() {
 
   return (
     <div className="space-y-8 p-6 rtl">
-      {/* 👈 أزرار التنقل (الرئيسية ورجوع) مطابقة تماماً لبقية الصفحات ومفعلة بالكامل */}
-      <div className="flex items-center justify-between mb-2">
+      {/* 👈 أزرار الرئيسية ورجوع مطابقة تماماً ومفعلة 100% مثل بقية صفحات المنصة */}
+      <div className="flex items-center justify-between">
         <button
           onClick={() => navigateTo("dashboard")}
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
         >
           <LayoutGrid className="h-4 w-4 text-primary" />
           <span>الرئيسية</span>
@@ -100,7 +100,7 @@ export function AdminView() {
 
         <button
           onClick={() => window.history.back()}
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition-colors shadow-xs cursor-pointer"
         >
           <span>رجوع</span>
           <ArrowRight className="h-4 w-4" />

@@ -24,8 +24,8 @@ import { emptyAddress, type Address } from "@/lib/iraq"
 import { TAB_PATHS } from "@/lib/navigation"
 
 const STORAGE_KEY = "elite-iraq-app-v2"
-const DEMO_EMAIL = "demo@elite.iq"
-const DEMO_PASSWORD = "Elite123"
+const DEMO_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "demo@elite.iq"
+const DEMO_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "Elite123"
 const LOCAL_OTP = "123456"
 
 export type ChannelId = "instagram" | "tiktok" | "whatsapp" | "snapchat"
@@ -110,9 +110,9 @@ export type MerchantProfile = {
   ready: boolean
   telegramBotToken?: string
   telegramChatId?: string
-  totalVisitors?: number  // 👈 عداد زوار المتجر الإجمالي
-  liveVisitors?: number   // 👈 عدد الزوار المتواجدين الآن
-  status?: "active" | "suspended" // 👈 حالة الحساب عند الأدمن
+  totalVisitors?: number
+  liveVisitors?: number
+  status?: "active" | "suspended"
   notifications?: NotificationPrefs
   telegramSettings?: TelegramSettings
   businessHours?: BusinessHours
@@ -150,22 +150,26 @@ type AppState = {
   language: string
   currency: string
   theme: string
-  
-  // حالة التنقل والبحث المركزي
+
   activeTab: string
   setActiveTab: (tab: string) => void
   globalSearchQuery: string
   setGlobalSearchQuery: (query: string) => void
   navigateTo: (tab: string, searchQuery?: string) => void
 
-  // صلاحيات ووظائف الأدمن الرئيسي
   isAdmin: boolean
   allMerchants: PersistedUser[]
   adminChangeMerchantPlan: (userId: string, planId: string) => void
   adminResetMerchantTokens: (userId: string) => void
   adminToggleMerchantStatus: (userId: string) => void
   adminImpersonateMerchant: (userId: string) => void
+  // 👈 معرّف الأدمن الأصلي أثناء تصفّح حساب تاجر بصفته "أدمن متخفّي" — null إن لم يكن هناك انتحال جارٍ
+  impersonatorId: string | null
+  // 👈 العودة الفورية لجلسة الأدمن الأصلي دون تسجيل خروج/دخول
+  adminReturnToAdmin: () => void
   adminBroadcastNotification: (title: string, message: string) => void
+  // 👈 إشعار موجّه لتاجر واحد فقط (بدل البث لكل التجّار)
+  adminSendMerchantNotification: (userId: string, title: string, message: string) => void
   incrementVisitorCount: () => void
 
   setLanguage: (lang: string) => void
@@ -178,6 +182,7 @@ type AppState = {
   sendLocalOtp: (phone: string) => Promise<string | null>
   register: (name: string, email: string, password: string, extra?: { storeName?: string; phone?: string }) => Promise<string | null>
   logout: () => void
+  deleteAccount: () => void // 👈 ميزة حذف الحساب للمستخدم نفسه
   completeOnboarding: (input: { storeName: string; slug: string; phone: string; address: Address }) => void
   updateMerchant: (patch: Partial<MerchantProfile>) => void
   upgradePlan: (planId: string) => void
@@ -219,56 +224,44 @@ function uid(prefix: string) {
 }
 
 function demoUser(): PersistedUser {
-  const defaultPlan = plans[1] // Growth plan
+  const defaultPlan = plans[1]
   return {
     id: "user-demo",
-    name: "مالك المتجر (الأدمن)",
+    name: "مدير المنصة الرئيسي",
     email: DEMO_EMAIL,
     password: DEMO_PASSWORD,
     merchant: {
-      storeName: "متجر لمسة",
-      slug: "lamsa",
-      phone: "07701230000",
+      storeName: "إدارة المنصة المركزية",
+      slug: "admin-elite",
+      phone: "07700000000",
       plan: defaultPlan.name,
       activePlanId: defaultPlan.id,
       aiModel: "gemini-3.8-flash",
-      aiTokensUsed: 120000,
+      aiTokensUsed: 1000,
       aiTokenLimit: defaultPlan.monthlyTokenLimit,
       currency: "IQD",
       ready: true,
-      totalVisitors: 1420,
-      liveVisitors: 6,
+      totalVisitors: 500,
+      liveVisitors: 2,
       status: "active",
-      telegramBotToken: "",
-      telegramChatId: "",
       address: {
         governorate: "بغداد",
         city: "الكرخ",
         district: "المنصور",
-        street: "شارع الأميرات",
-        details: "مجمع التجارة، الطابق الثاني",
+        street: "شارع الرئيسي",
+        details: "المقر الرئيسي",
       },
     },
-    channels: CHANNEL_CATALOG.map((c) =>
-      c.id === "instagram"
-        ? { ...c, connected: true, handle: "@lamsa.iq", connectedAt: "١٢ سبتمبر ٢٠٢٦" }
-        : c.id === "whatsapp"
-          ? { ...c, connected: true, handle: "07701230000", connectedAt: "١٠ سبتمبر ٢٠٢٦" }
-          : c
-    ),
+    channels: CHANNEL_CATALOG,
     orders: seedOrders,
     products: seedProducts,
     rules: seedReplyRules,
     language: "ar",
     currency: "IQD",
     theme: "dark",
-    coupons: [
-      { id: "c-welcome", code: "WELCOME10", percent: 10, active: true, used: 0, maxUses: 100 },
-    ],
+    coupons: [],
     notifications: [
-      { id: "n1", title: "رسالة جديدة من إنستغرام (@ali_iq)", time: "منذ دقيقتين", read: false, type: "message", href: "/chatbot" },
-      { id: "n2", title: "تم تسجيل طلب جديد من لوحة المتجر", time: "منذ 15 دقيقة", read: false, type: "order", href: "/orders" },
-      { id: "n3", title: "تم تفعيل الرد التلقائي لقناة إنستغرام", time: "منذ ساعة", read: true, type: "system", href: "/channels" },
+      { id: "n1", title: "مرحباً بك في لوحة تحكم الأدمن المركزية", time: "الآن", read: false, type: "system", href: "/admin" },
     ],
   }
 }
@@ -279,13 +272,12 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: null, impersonatorId: null }))
       return seeded
     }
     const parsed = JSON.parse(raw) as { users: PersistedUser[] }
     const users = parsed.users ?? [demoUser()]
-    
-    // 👈 التأكد الجذري من وجود حساب الأدمن دائماً ضمن قائمة المستخدمين المخزنة
+
     if (!users.some((u) => u.email.toLowerCase() === DEMO_EMAIL.toLowerCase())) {
       users.unshift(demoUser())
     }
@@ -299,7 +291,7 @@ function loadSessionId(): string | null {
   if (typeof window === "undefined") return null
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null // 👈 إرجاع null لمنع أي جلسة وهمية
+    if (!raw) return null
     const parsed = JSON.parse(raw) as { sessionId?: string | null }
     return parsed.sessionId !== undefined ? parsed.sessionId : null
   } catch {
@@ -307,21 +299,33 @@ function loadSessionId(): string | null {
   }
 }
 
-function persist(users: PersistedUser[], sessionId: string | null) {
+// 👈 استرجاع هوية الأدمن الأصلي إن كان هناك انتحال جارٍ محفوظ من جلسة سابقة
+function loadImpersonatorId(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { impersonatorId?: string | null }
+    return parsed.impersonatorId ?? null
+  } catch {
+    return null
+  }
+}
+
+function persist(users: PersistedUser[], sessionId: string | null, impersonatorId: string | null = null) {
   if (typeof window === "undefined") return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ users, sessionId }))
-  } catch {
-    // يتجاهل الأخطاء إذا كانت مساحة التخزين ممتلئة
-  }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ users, sessionId, impersonatorId }))
+  } catch {}
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<PersistedUser[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
+  // 👈 معرّف الأدمن الأصلي أثناء تصفّح متجر تاجر بصفة أدمن؛ null يعني لا يوجد انتحال جارٍ
+  const [impersonatorId, setImpersonatorIdState] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
-  // حالة التنقل والبحث المركزية
   const [activeTab, setActiveTab] = useState<string>("dashboard")
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>("")
 
@@ -332,9 +336,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadedUsers = loadAll()
     const loadedSession = loadSessionId()
+    const loadedImpersonatorId = loadImpersonatorId()
     setUsers(loadedUsers)
     setSessionId(loadedSession)
-    
+    setImpersonatorIdState(loadedImpersonatorId)
+
     const activeUser = loadedUsers.find((u) => u.id === loadedSession)
     if (activeUser) {
       if (activeUser.language) setLanguageState(activeUser.language)
@@ -345,6 +351,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const current = users.find((u) => u.id === sessionId) ?? null
+
+  // 👈 التحقق الصارم من الأدمن عبر بريد متغير البيئة حصرياً
   const isAdmin = current?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase()
 
   useEffect(() => {
@@ -364,13 +372,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     apply(activeTheme)
   }, [current?.theme, theme])
 
+  // 👈 commit أصبح يقبل معامل ثالث اختياري لتحديث impersonatorId معه بنفس عملية الحفظ.
+  // إن لم يُمرَّر، يحافظ على قيمة impersonatorId الحالية كما هي (متوافق مع كل الاستدعاءات القديمة).
   const commit = useCallback(
-    (nextUsers: PersistedUser[], nextSession: string | null) => {
+    (nextUsers: PersistedUser[], nextSession: string | null, nextImpersonatorId?: string | null) => {
+      const resolvedImpersonatorId = nextImpersonatorId !== undefined ? nextImpersonatorId : impersonatorId
       setUsers(nextUsers)
       setSessionId(nextSession)
-      persist(nextUsers, nextSession)
+      setImpersonatorIdState(resolvedImpersonatorId)
+      persist(nextUsers, nextSession, resolvedImpersonatorId)
     },
-    []
+    [impersonatorId]
   )
 
   const patchCurrent = useCallback(
@@ -395,7 +407,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // زيادة عداد زوار المتجر
   const incrementVisitorCount = useCallback(() => {
     patchCurrent((u) => ({
       ...u,
@@ -406,9 +417,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }))
   }, [patchCurrent])
 
-  // ==========================================
-  // دوال التحكم للسوبر أدمن (Super Admin) - محمية تماماً بالمنطق
-  // ==========================================
   const adminChangeMerchantPlan = useCallback(
     (userId: string, planId: string) => {
       if (!isAdmin) return
@@ -476,18 +484,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [isAdmin, commit, sessionId, users]
   )
 
+  // 👈 يحفظ هوية الأدمن الحالي كـ impersonatorId قبل تبديل الجلسة إلى التاجر المستهدف،
+  // بحيث يبقى أثر "من هو الأدمن الذي دخل بصفة هذا التاجر" متاحاً للعودة لاحقاً.
   const adminImpersonateMerchant = useCallback(
     (userId: string) => {
-      if (!isAdmin) return
-      commit(users, userId)
+      if (!isAdmin || !current) return
+      commit(users, userId, current.id)
     },
-    [isAdmin, commit, users]
+    [isAdmin, current, commit, users]
   )
+
+  // 👈 العودة الفورية لجلسة الأدمن الأصلي دون تسجيل خروج/دخول جديد.
+  // تعمل بالاعتماد على impersonatorId المحفوظ، وليس على isAdmin (لأن current أثناء
+  // الانتحال هو التاجر نفسه وليس الأدمن).
+  const adminReturnToAdmin = useCallback(() => {
+    if (!impersonatorId) return
+    const adminStillExists = users.some((u) => u.id === impersonatorId)
+    if (!adminStillExists) return
+    commit(users, impersonatorId, null)
+  }, [impersonatorId, users, commit])
 
   const adminBroadcastNotification = useCallback(
     (title: string, message: string) => {
       if (!isAdmin) return
       const nextUsers = users.map((u) => {
+        const note: AppNotification = {
+          id: uid("n"),
+          title: `${title}: ${message}`,
+          time: "الآن",
+          read: false,
+          type: "system",
+        }
+        return {
+          ...u,
+          notifications: [note, ...(u.notifications ?? [])].slice(0, 40),
+        }
+      })
+      commit(nextUsers, sessionId)
+    },
+    [isAdmin, commit, sessionId, users]
+  )
+
+  // 👈 إصلاح: إشعار موجّه لتاجر واحد فقط بدل بثّه لكل تجّار المنصة.
+  // يُستخدم في زرّي "إشعار خاص" و"حظر المتجر" بدل adminBroadcastNotification الخاطئة.
+  const adminSendMerchantNotification = useCallback(
+    (userId: string, title: string, message: string) => {
+      if (!isAdmin) return
+      const nextUsers = users.map((u) => {
+        if (u.id !== userId) return u
         const note: AppNotification = {
           id: uid("n"),
           title: `${title}: ${message}`,
@@ -537,7 +581,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const found = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase())
       if (!found || found.password !== password) return "البريد أو كلمة المرور غير صحيحة"
-      commit(users, found.id)
+
+      // التحقق مما إذا كان الحساب محظوراً
+      if (found.merchant.status === "suspended" && found.email.toLowerCase() !== DEMO_EMAIL.toLowerCase()) {
+        return "تم حظر دخولك إلى المنصة من قبل الإدارة. وشكراً لاستخدامك إيليت العراق."
+      }
+
+      commit(users, found.id, null)
       return null
     },
     [commit, users]
@@ -554,7 +604,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         email: email.trim().toLowerCase(),
         password,
         merchant: {
-          storeName: extra?.storeName?.trim() || "",
+          storeName: extra?.storeName?.trim() || "متجري الجديد",
           slug: (extra?.storeName || name || "store").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24),
           phone: extra?.phone || "",
           ownerName: name.trim(),
@@ -569,15 +619,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           totalVisitors: 0,
           liveVisitors: 1,
           status: "active",
-          telegramBotToken: "",
-          telegramChatId: "",
           address: emptyAddress(),
-          notifications: {
-            emailNewOrder: true,
-            soundNotification: true,
-            whatsappMerchantAlert: true,
-            highRiskAlert: true,
-          },
         },
         channels: CHANNEL_CATALOG.map((c) => ({ ...c })),
         orders: [],
@@ -586,11 +628,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         language: "ar",
         currency: "IQD",
         theme: "dark",
-        coupons: [{ id: uid("c"), code: "START10", percent: 10, active: true, used: 0, maxUses: 50 }],
+        coupons: [],
         notifications: [
           {
             id: uid("n"),
-            title: "مرحباً بك في إيليت العراق — أكمل إعداد المتجر وربط القنوات",
+            title: "مرحباً بك في إيليت العراق — أكمل إعداد المتجر",
             time: "الآن",
             read: false,
             type: "system",
@@ -598,51 +640,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
           },
         ],
       }
-      commit([...users, user], user.id)
+      commit([...users, user], user.id, null)
       return null
     },
     [commit, users]
   )
 
+  // 👈 ميزة حذف الحساب الذاتي من قبل المستخدم نفسه بسهولة
+  const deleteAccount = useCallback(() => {
+    if (!current) return
+    const remainingUsers = users.filter((u) => u.id !== current.id)
+    commit(remainingUsers, null, null)
+  }, [commit, current, users])
+
   const sendLocalOtp = useCallback(async (phone: string) => {
     const clean = phone.replace(/\D/g, "")
     if (!/^(0)?(77|78|79|75)\d{8}$/.test(clean)) return "يرجى كتابة رقم هاتف عراقي صحيح"
-    if (typeof window !== "undefined") {
-      try {
-        sessionStorage.setItem("elite-otp-phone", clean)
-        sessionStorage.setItem("elite-otp-code", LOCAL_OTP)
-      } catch {
-        // حماية عند التصفح الخفي
-      }
-    }
     return null
   }, [])
 
   const loginWithPhone = useCallback(
     async (phone: string, otp: string) => {
       const clean = phone.replace(/\D/g, "")
-      let expected = LOCAL_OTP
-      if (typeof window !== "undefined") {
-        try {
-          expected = sessionStorage.getItem("elite-otp-code") || LOCAL_OTP
-        } catch {
-          expected = LOCAL_OTP
-        }
-      }
-      if (otp.trim() !== expected) return "رمز التحقق غير صحيح. الرمز التجريبي: 123456"
+      if (otp.trim() !== LOCAL_OTP) return "رمز التحقق غير صحيح. الرمز التجريبي: 123456"
       const email = `${clean}@phone.elite.iq`
       const found = users.find((u) => u.email === email || u.merchant.phone.replace(/\D/g, "") === clean)
       if (found) {
-        commit(users, found.id)
+        if (found.merchant.status === "suspended") {
+          return "تم حظر دخولك إلى المنصة من قبل الإدارة. وشكراً لاستخدامك إيليت العراق."
+        }
+        commit(users, found.id, null)
         return null
       }
-      return register(clean, email, `phone-${clean}`, { phone: clean, storeName: "" })
+      return register(clean, email, `phone-${clean}`, { phone: clean, storeName: "متجر الهاتف" })
     },
     [commit, register, users]
   )
 
   const logout = useCallback(() => {
-    commit(users, null)
+    commit(users, null, null)
   }, [commit, users])
 
   const completeOnboarding = useCallback(
@@ -690,9 +726,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (tokensCount = 1000) => {
       if (!current) return false
       const { aiTokensUsed, aiTokenLimit } = current.merchant
-      if (aiTokensUsed >= aiTokenLimit) {
-        return false
-      }
+      if (aiTokensUsed >= aiTokenLimit) return false
       patchCurrent((u) => ({
         ...u,
         merchant: {
@@ -968,21 +1002,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       language: current?.language ?? language,
       currency: current?.currency ?? currency,
       theme: current?.theme ?? theme,
-      
+
       activeTab,
       setActiveTab,
       globalSearchQuery,
       setGlobalSearchQuery,
       navigateTo,
 
-      // إمكانيات الأدمن وعداد الزوار
       isAdmin,
       allMerchants: users,
       adminChangeMerchantPlan,
       adminResetMerchantTokens,
       adminToggleMerchantStatus,
       adminImpersonateMerchant,
+      impersonatorId,
+      adminReturnToAdmin,
       adminBroadcastNotification,
+      adminSendMerchantNotification,
       incrementVisitorCount,
 
       setLanguage,
@@ -993,6 +1029,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sendLocalOtp,
       register,
       logout,
+      deleteAccount,
       completeOnboarding,
       updateMerchant,
       upgradePlan,
@@ -1033,7 +1070,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       adminResetMerchantTokens,
       adminToggleMerchantStatus,
       adminImpersonateMerchant,
+      impersonatorId,
+      adminReturnToAdmin,
       adminBroadcastNotification,
+      adminSendMerchantNotification,
       incrementVisitorCount,
       setActiveTab,
       setGlobalSearchQuery,
@@ -1046,6 +1086,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sendLocalOtp,
       register,
       logout,
+      deleteAccount,
       completeOnboarding,
       updateMerchant,
       upgradePlan,

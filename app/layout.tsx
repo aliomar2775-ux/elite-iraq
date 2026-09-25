@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Cairo } from 'next/font/google'
 import { AppProvider } from '@/lib/app-state'
 import { AuthGate } from '@/components/app/auth-gate'
+import { ImpersonationBar } from '@/components/app/impersonation-bar' // 👈 استيراد شريط المعاينة
 import './globals.css'
 
 const cairo = Cairo({
@@ -36,6 +37,7 @@ export default function RootLayout({
           <AuthGate>
             {children}
           </AuthGate>
+          <ImpersonationBar /> {/* 👈 إضافة الشريط العائم هنا ليعمل فوق كل الصفحات */}
         </AppProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
