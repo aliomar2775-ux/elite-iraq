@@ -2,9 +2,33 @@ import { NextResponse } from "next/server"
 import { GoogleGenAI } from "@google/genai"
 import { seedReplyRules } from "@/lib/data"
 
+// تهيئة محرك Google Gemini 2.5
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" })
 
-const storeProducts = [
+interface StoreProduct {
+  id: number
+  name: string
+  price: number
+  available: boolean
+  stock: number
+  sizes: string[]
+  features: string
+  related: number[]
+}
+
+interface ExtractedData {
+  customerName: string
+  customerPhone: string
+  customerAddress: string
+}
+
+interface AIResponseFormat {
+  reply: string
+  extractedData: ExtractedData
+  isOrderCompleted: boolean
+}
+
+const storeProducts: StoreProduct[] = [
   {
     id: 1,
     name: "سماعة ألعاب احترافية RGB",
@@ -13,7 +37,7 @@ const storeProducts = [
     stock: 12,
     sizes: ["قياسي موحد"],
     features: "عزل ضوضاء ممتاز، إضاءة RGB، ميكروفون عالي التصفية، ضمان حقيقي لمدة 6 أشهر.",
-    related: [2]
+    related: [2],
   },
   {
     id: 2,
@@ -23,9 +47,9 @@ const storeProducts = [
     stock: 1,
     sizes: ["49mm"],
     features: "شاشة AMOLED عالية الدقة، تدعم المكالمات، مقاومة للماء، بطارية تدوم طويلاً.",
-    related: [1]
-  }
-];
+    related: [1],
+  },
+]
 
 const GREETINGS = [
   "سلام عليكم",
@@ -43,13 +67,29 @@ const GREETINGS = [
   "شلونكم",
 ]
 
+/**
+ * دالة ذكية ومطورة للتحقق من صحة أرقام الهواتف العراقية
+ * تدعم: 077..., 078..., 079..., 075... والصيغ الدولية مثل +964...
+ */
 function isValidIraqiPhone(phone: string): boolean {
-  const cleanPhone = phone.replace(/\D/g, "")
-  const iraqiRegex = /^(0)?(77|78|79|75)\d{8}$/
-  return iraqiRegex.test(cleanPhone)
+  if (!phone) return false
+  let clean = phone.replace(/\D/g, "")
+
+  // إذا بدأ بفتح الخط الدولي العراقي 964
+  if (clean.startsWith("964")) {
+    clean = clean.slice(3)
+  }
+
+  // إضافة الصفر في البداية إذا لم يكن موجوداً
+  if (!clean.startsWith("0")) {
+    clean = "0" + clean
+  }
+
+  const iraqiRegex = /^07[5789]\d{8}$/
+  return iraqiRegex.test(clean)
 }
 
-// 1. التحقق من الـ Webhook الخاص بـ Meta (Messenger & Instagram) عند الربط لأول مرة
+// 1. التحقق من الـ Webhook الخاص بـ Meta (Messenger & Instagram)
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const mode = searchParams.get("hub.mode")
@@ -64,31 +104,31 @@ export async function GET(request: Request) {
   return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
 }
 
-// 2. استقبال الرسائل الواردة وتوفير التوكنات بالنظام الهجين
+// 2. معالجة واستقبال الرسائل الذكية
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, any>
     let userMessage = ""
     let senderId = ""
     let platform = "chat_preview"
 
-    // دعم طلبات المعاينة المباشرة من الواجهة أو من Webhooks المنصات
-    if (body.message) {
+    // دعم طلبات المعاينة المباشرة أو Webhooks المنصات المختلفة
+    if (typeof body.message === "string") {
       userMessage = body.message
     } else if (body.object === "page" || body.object === "instagram") {
       platform = body.object === "instagram" ? "instagram" : "messenger"
       const entry = body.entry?.[0]
       const messagingEvent = entry?.messaging?.[0] || entry?.changes?.[0]?.value
-      userMessage = messagingEvent?.message?.text || messagingEvent?.text
-      senderId = messagingEvent?.sender?.id || messagingEvent?.from?.id
+      userMessage = messagingEvent?.message?.text || messagingEvent?.text || ""
+      senderId = messagingEvent?.sender?.id || messagingEvent?.from?.id || ""
     } else if (body.platform === "tiktok" || body.event === "message.receive") {
       platform = "tiktok"
-      userMessage = body.content?.text
-      senderId = body.sender?.open_id
+      userMessage = body.content?.text || ""
+      senderId = body.sender?.open_id || ""
     }
 
     if (!userMessage || typeof userMessage !== "string") {
-      return NextResponse.json({ status: "No message found" }, { status: 200 })
+      return NextResponse.json({ status: "No valid message found" }, { status: 200 })
     }
 
     const cleanMsg = userMessage.trim().toLowerCase()
@@ -100,16 +140,17 @@ export async function POST(request: Request) {
       (g) => cleanMsg === g || cleanMsg === `${g}👋` || cleanMsg === `${g} 👋`
     )
     if (isGreetingOnly) {
+      const greetingReply = "وعليكم السلام والرحمة! أهلاً بك في متجرنا 👋 شلون أقدر أساعدك اليوم؟"
       return NextResponse.json({
         success: true,
-        reply: "وعليكم السلام والرحمة! أهلاً بك في متجرنا 👋 شلون أقدر أساعدك اليوم؟",
+        reply: greetingReply,
         extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
         isOrderCompleted: false,
         aiResponse: {
-          reply: "وعليكم السلام والرحمة! أهلاً بك في متجرنا 👋 شلون أقدر أساعدك اليوم؟",
+          reply: greetingReply,
           extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
-          isOrderCompleted: false
-        }
+          isOrderCompleted: false,
+        },
       })
     }
 
@@ -128,23 +169,25 @@ export async function POST(request: Request) {
       }
     }
 
+    // تصفية نص التحية بأسلوب آمن للغة العربية بدون استخدام \b
     let remainingText = cleanMsg
     GREETINGS.forEach((g) => {
-      remainingText = remainingText.replace(new RegExp(`\\b${g}\\b`, "g"), "").trim()
+      remainingText = remainingText.replaceAll(g, "").trim()
     })
 
-    // إذا كانت الرسالة سؤالاً بطلاقة وحسب قاعدة محلية متوفرة
+    // إذا كان الاستفسار إجابة مباشرة ومطابقة لشرط القاعدة المحلية
     if (matchedRuleReply && remainingText.length < 35) {
+      const ruleReplyText = `أهلاً بك! 👋 ${matchedRuleReply}`
       return NextResponse.json({
         success: true,
-        reply: `أهلاً بك! 👋 ${matchedRuleReply}`,
+        reply: ruleReplyText,
         extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
         isOrderCompleted: false,
         aiResponse: {
-          reply: `أهلاً بك! 👋 ${matchedRuleReply}`,
+          reply: ruleReplyText,
           extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
-          isOrderCompleted: false
-        }
+          isOrderCompleted: false,
+        },
       })
     }
 
@@ -152,58 +195,75 @@ export async function POST(request: Request) {
     // المرحلة 3: الاستعانة بـ Gemini 2.5 للرسائل المركبة والمبيعات
     // -------------------------------------------------------------
     const systemInstruction = `
-    أنت مساعد مبيعات ذكي وودود جداً لمتجر عراقي ضمن منصة "إيليت العراق". تتحدث باللهجة العراقية الدارجة والطبيعية والمهذبة.
+أنت مساعد مبيعات ذكي وودود جداً لمتجر عراقي ضمن منصة "إيليت العراق". تتحدث باللهجة العراقية الدارجة والطبيعية والمهذبة.
 
-    معلومات الخدمة وأسعار التوصيل:
-    - التوصيل لبغداد: 5,000 دينار عراقي.
-    - التوصيل لباقي المحافظات: 8,000 دينار عراقي.
-    - مدة التوصيل: خلال 24 إلى 48 ساعة.
+معلومات الخدمة وأسعار التوصيل:
+- التوصيل لبغداد: 5,000 دينار عراقي.
+- التوصيل لباقي المحافظات: 8,000 دينار عراقي.
+- مدة التوصيل: خلال 24 إلى 48 ساعة.
 
-    معلومات مخزن المنتجات:
-    ${JSON.stringify(storeProducts, null, 2)}
+معلومات مخزن المنتجات:
+${JSON.stringify(storeProducts, null, 2)}
 
-    تعليمات هامة:
-    1. إذا دمج الزبون تحية مع عدة أسئلة (مثل السعر والتوصيل وموعد الوصول)، رحب به بأسلوب عراقي لطيف وأجب عن **جميع أسئلته في رد واحد شامل ومختصر**.
-    2. أجب الزبون عن المنتجات وأسعارها وتوفرها بدقة. لا تذكر العدد الكلي للقطع إلا إذا كانت المتبقية قطعة أو قطعتين (Stock <= 2)، اذكر ذلك لتحفيزه (مثلاً: "بقيت قطعة وحدة فقط الحگ عليها!").
-    3. اقترح منتجات بديلة أو إضافية بذكاء (Cross-selling).
-    4. راقب الحوار واستخرج بيانات الطلب إذا وافق الزبون على الشراء:
-       - customerName: اسم الزبون.
-       - customerPhone: رقم الهاتف العراقي (يبدأ بـ 077, 078, 079, 075).
-       - customerAddress: العنوان بالتفصيل.
-       - isOrderCompleted: true فقط إذا توافرت البيانات الثلاثة وأكد الطلب تماماً، وإلا false.
+تعليمات هامة:
+1. إذا دمج الزبون تحية مع عدة أسئلة (مثل السعر والتوصيل وموعد الوصول)، رحب به بأسلوب عراقي لطيف وأجب عن جميع أسئلته في رد واحد شامل ومختصر.
+2. أجب الزبون عن المنتجات وأسعارها وتوفرها بدقة. لا تذكر العدد الكلي للقطع إلا إذا كانت المتبقية قطعة أو قطعتين (Stock <= 2)، اذكر ذلك لتحفيزه (مثلاً: "بقيت قطعة وحدة فقط الحگ عليها!").
+3. اقترح منتجات بديلة أو إضافية بذكاء (Cross-selling).
+4. راقب الحوار واستخرج بيانات الطلب إذا وافق الزبون على الشراء:
+   - customerName: اسم الزبون.
+   - customerPhone: رقم الهاتف العراقي (يبدأ بـ 077, 078, 079, 075).
+   - customerAddress: العنوان بالتفصيل.
+   - isOrderCompleted: true فقط إذا توافرت البيانات الثلاثة وأكد الطلب تماماً، وإلا false.
 
-    أجب بصيغة JSON صالح حصراً وبدون أي إضافات:
-    {
-      "reply": "الرد العراقي المناسب والكامل للزبون",
-      "extractedData": {
-        "customerName": "...",
-        "customerPhone": "...",
-        "customerAddress": "..."
-      },
-      "isOrderCompleted": false
-    }
-    `
+أجب بصيغة JSON صالح حصراً وبدون أي إضافات:
+{
+  "reply": "الرد العراقي المناسب والكامل للزبون",
+  "extractedData": {
+    "customerName": "...",
+    "customerPhone": "...",
+    "customerAddress": "..."
+  },
+  "isOrderCompleted": false
+}
+`
 
-    // استدعاء جيميناي 2.5 للرد الفوري
+    // استدعاء Gemini 2.5 Flash
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: "gemini-2.5-flash",
       contents: [
-        { role: 'user', parts: [{ text: `${systemInstruction}\n\nرسالة الزبون (${platform}): ${userMessage}` }] }
+        {
+          role: "user",
+          parts: [{ text: `رسالة الزبون القادمة عبر (${platform}): ${userMessage}` }],
+        },
       ],
       config: {
-        responseMimeType: "application/json"
+        systemInstruction: systemInstruction,
+        responseMimeType: "application/json",
+      },
+    })
+
+    let parsedData: AIResponseFormat = {
+      reply: "أهلاً بك عيوني! نعتذر، حدث خطل بسيط بالخدمة، شلون أقدر أساعدك؟",
+      extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
+      isOrderCompleted: false,
+    }
+
+    try {
+      if (response.text) {
+        parsedData = JSON.parse(response.text) as AIResponseFormat
       }
-    });
+    } catch (parseError) {
+      console.error("خطأ في تحليل استجابة JSON من Gemini:", parseError)
+    }
 
-    const parsedData = JSON.parse(response.text || "{}");
-
-    // التحقق من رقم الهاتف العراقي في حال اكتمال الطلب
+    // التحقق المباشر من صحة رقم الهاتف العراقي
     if (parsedData.isOrderCompleted && parsedData.extractedData?.customerPhone) {
       if (!isValidIraqiPhone(parsedData.extractedData.customerPhone)) {
-        parsedData.isOrderCompleted = false;
-        parsedData.reply = "عذراً عيوني، رقم الهاتف مو صحيح أو مو تابع لشبكات العراق (زين، أسياسيل، كورك). ممكن تكتب رقمك الصحيح؟";
+        parsedData.isOrderCompleted = false
+        parsedData.reply =
+          "عذراً عيوني، رقم الهاتف مو صحيح أو مو تابع لشبكات العراق (زين، أسياسيل، كورك). ممكن تكتب رقمك الصحيح؟"
       } else {
-        console.log(`🚀 [طلب جديد مكتمل عبر ${platform}] للزبون:`, parsedData.extractedData);
+        console.log(`🚀 [طلب جديد مكتمل عبر ${platform} - ID: ${senderId}] للزبون:`, parsedData.extractedData)
       }
     }
 
@@ -212,10 +272,11 @@ export async function POST(request: Request) {
       reply: parsedData.reply,
       extractedData: parsedData.extractedData,
       isOrderCompleted: parsedData.isOrderCompleted,
-      aiResponse: parsedData
+      aiResponse: parsedData,
     })
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Internal Server Error"
     console.error("Webhook / Chat API Error:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }

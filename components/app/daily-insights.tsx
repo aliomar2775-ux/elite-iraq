@@ -1,10 +1,11 @@
 "use client"
 
+import React from "react"
 import { Sparkles, TrendingUp, ShieldAlert } from "lucide-react"
 
 export function DailyInsights() {
   return (
-    <section className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-xs rtl text-foreground text-right">
+    <section className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-sm rtl text-foreground text-right">
       <div className="flex items-center gap-2 border-b border-border/60 pb-3">
         <Sparkles className="h-4 w-4 text-primary shrink-0" />
         <div>
