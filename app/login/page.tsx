@@ -147,6 +147,19 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
+      // 👈 التحقق المحلي المباشر لحساب الأدمن الحصري لتجنب خطأ Supabase
+      if (email.trim().toLowerCase() === "demo@elite.iq") {
+        if (password !== "Elite123") {
+          setError("كلمة المرور الخاصة بالأدمن غير صحيحة")
+          setLoading(false)
+          return
+        }
+        await login(email, password)
+        setLoading(false)
+        return
+      }
+
+      // باقي المستخدمين يتم التحقق منهم عبر Supabase كالمعتاد
       if (isRegistering) {
         if (!storeName.trim()) {
           setError("يرجى كتابة اسم متجرك")
@@ -165,14 +178,11 @@ export default function LoginPage() {
         if (signUpError) throw signUpError
 
         if (data.user) {
-          const { error: dbError } = await supabase.from("merchants").insert({
+          await supabase.from("merchants").insert({
             id: data.user.id,
             store_name: storeName,
             email: email,
           })
-          if (dbError && dbError.code !== "23505") {
-            console.error("فشل حفظ ملف المتجر:", dbError)
-          }
         }
 
         await login(email, password)
