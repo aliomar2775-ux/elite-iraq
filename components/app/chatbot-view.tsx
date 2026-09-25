@@ -541,7 +541,7 @@ export function ChatbotView() {
             chatId: (merchant as any)?.telegramChatId || (merchant as any)?.settings?.telegramChatId || "",
           },
           planId: merchant?.activePlanId || "pro",
-          model: merchant?.aiModel || "gemini-2.5-flash",
+          model: merchant?.aiModel || "gemini-3.8-flash",
           conversationHistory: chat.messages.slice(-12).map((m) => ({
             role: m.sender === "bot" || m.sender === "merchant" ? "model" : "user",
             parts: [{ text: m.text }],
@@ -728,7 +728,7 @@ export function ChatbotView() {
             chatId: (merchant as any)?.telegramChatId || (merchant as any)?.settings?.telegramChatId || "",
           },
           planId: merchant?.activePlanId || "pro",
-          model: merchant?.aiModel || "gemini-2.5-flash",
+          model: merchant?.aiModel || "gemini-3.8-flash",
           conversationHistory: activeChat.messages.slice(-4).map((m) => ({
             role: m.sender === "bot" ? "model" : "user",
             parts: [{ text: m.text }],
