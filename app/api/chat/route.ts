@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { GoogleGenAI } from "@google/genai"
 import { seedReplyRules } from "@/lib/data"
+import { sendTelegramOrderNotification } from "@/lib/integrations/telegram"
 
 // تهيئة محرك Google Gemini 2.5
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" })
@@ -56,8 +57,8 @@ const GREETINGS = [
   "السلام عليكم",
   "هلو",
   "هلا",
-  "مرحبا",
   "مرجبا",
+  "مرحبا",
   "صباح الخير",
   "مساء الخير",
   "عيوني",
@@ -243,7 +244,7 @@ ${JSON.stringify(storeProducts, null, 2)}
     })
 
     let parsedData: AIResponseFormat = {
-      reply: "أهلاً بك عيوني! نعتذر، حدث خطل بسيط بالخدمة، شلون أقدر أساعدك؟",
+      reply: "أهلاً بك عيوني! نعتذر، حدث خطأ بسيط بالخدمة، شلون أقدر أساعدك؟",
       extractedData: { customerName: "", customerPhone: "", customerAddress: "" },
       isOrderCompleted: false,
     }
@@ -256,7 +257,7 @@ ${JSON.stringify(storeProducts, null, 2)}
       console.error("خطأ في تحليل استجابة JSON من Gemini:", parseError)
     }
 
-    // التحقق المباشر من صحة رقم الهاتف العراقي
+    // التحقق المباشر من صحة رقم الهاتف العراقي وإرسال إشعار التليجرام عند اكتمال الطلب
     if (parsedData.isOrderCompleted && parsedData.extractedData?.customerPhone) {
       if (!isValidIraqiPhone(parsedData.extractedData.customerPhone)) {
         parsedData.isOrderCompleted = false
@@ -264,6 +265,17 @@ ${JSON.stringify(storeProducts, null, 2)}
           "عذراً عيوني، رقم الهاتف مو صحيح أو مو تابع لشبكات العراق (زين، أسياسيل، كورك). ممكن تكتب رقمك الصحيح؟"
       } else {
         console.log(`🚀 [طلب جديد مكتمل عبر ${platform} - ID: ${senderId}] للزبون:`, parsedData.extractedData)
+
+        // 🚀 إرسال إشعار التليجرام الفوري مع بيانات الطلب والمصدر
+        const orderId = Math.floor(10000 + Math.random() * 90000).toString()
+        await sendTelegramOrderNotification({
+          id: orderId,
+          customerName: parsedData.extractedData.customerName || "زبون جديد",
+          phone: parsedData.extractedData.customerPhone,
+          address: parsedData.extractedData.customerAddress || "غير محدد",
+          items: `طلب مؤكد عبر منصة (${platform})`,
+          totalAmount: "حسب طلب الشات بوت",
+        })
       }
     }
 
