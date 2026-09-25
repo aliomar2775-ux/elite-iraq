@@ -536,6 +536,10 @@ export function ChatbotView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "لخّص هذه المحادثة مع الزبون بجملتين إلى ثلاث جمل باللهجة العراقية، مع ذكر أهم طلب أو مشكلة والحالة الحالية.",
+          telegramConfig: {
+            botToken: (merchant as any)?.telegramBotToken || (merchant as any)?.settings?.telegramBotToken || "",
+            chatId: (merchant as any)?.telegramChatId || (merchant as any)?.settings?.telegramChatId || "",
+          },
           planId: merchant?.activePlanId || "pro",
           model: merchant?.aiModel || "gemini-2.5-flash",
           conversationHistory: chat.messages.slice(-12).map((m) => ({
@@ -713,11 +717,16 @@ export function ChatbotView() {
     }
 
     try {
+      // إرسال إعدادات التليجرام المحفوظة ديناميكياً مع الطلب
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: msgText,
+          telegramConfig: {
+            botToken: (merchant as any)?.telegramBotToken || (merchant as any)?.settings?.telegramBotToken || "",
+            chatId: (merchant as any)?.telegramChatId || (merchant as any)?.settings?.telegramChatId || "",
+          },
           planId: merchant?.activePlanId || "pro",
           model: merchant?.aiModel || "gemini-2.5-flash",
           conversationHistory: activeChat.messages.slice(-4).map((m) => ({
@@ -735,11 +744,29 @@ export function ChatbotView() {
       dispatchToPlatform(activeChat, aiReplyText)
       addActivity(activeChatId, activeChat.customerName, "رد تلقائي بالذكاء الاصطناعي", "ai")
 
+      // تحديث بيانات الطلب والمحادثة إذا اكتمل الطلب من خلال الذكاء الاصطناعي
       setChats((prev) =>
         prev.map((c) => {
           if (c.id !== activeChatId) return c
+
+          const extracted = data.extractedData || data.aiResponse?.extractedData
+          let updatedOrder = c.extractedOrder
+
+          if (extracted?.customerName || extracted?.customerPhone || extracted?.customerAddress) {
+            const delivery = calculateDeliveryFee(extracted.customerAddress || "")
+            updatedOrder = {
+              ...c.extractedOrder,
+              name: extracted.customerName || c.customerName,
+              phone: extracted.customerPhone || c.customerPhone,
+              address: extracted.customerAddress || c.extractedOrder?.address || "بغداد",
+              governorate: delivery.gov,
+              deliveryFee: delivery.fee,
+            }
+          }
+
           return {
             ...c,
+            extractedOrder: updatedOrder,
             messages: [
               ...c.messages,
               {
@@ -1233,8 +1260,8 @@ export function ChatbotView() {
                       placeholder="جرب رسالة تعديل: (غيرلي الموعد للسبت / أريد الموديل الـ Pro)..."
                       className="flex-1 h-9 rounded-lg border border-border px-3 text-xs bg-background outline-none focus:border-primary text-foreground"
                     />
-                    <button type="submit" className="h-9 px-3.5 rounded-lg bg-primary font-bold text-xs text-white hover:opacity-90 cursor-pointer">
-                      <Send className="h-3.5 w-3.5" />
+                    <button type="submit" disabled={isGenerating} className="h-9 px-3.5 rounded-lg bg-primary font-bold text-xs text-white hover:opacity-90 disabled:opacity-50 cursor-pointer">
+                      {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </form>
