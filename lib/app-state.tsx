@@ -110,6 +110,9 @@ export type MerchantProfile = {
   ready: boolean
   telegramBotToken?: string
   telegramChatId?: string
+  totalVisitors?: number  // 👈 عداد زوار المتجر الإجمالي
+  liveVisitors?: number   // 👈 عدد الزوار المتواجدين الآن
+  status?: "active" | "suspended" // 👈 حالة الحساب عند الأدمن
   notifications?: NotificationPrefs
   telegramSettings?: TelegramSettings
   businessHours?: BusinessHours
@@ -154,6 +157,16 @@ type AppState = {
   globalSearchQuery: string
   setGlobalSearchQuery: (query: string) => void
   navigateTo: (tab: string, searchQuery?: string) => void
+
+  // صلاحيات ووظائف الأدمن الرئيسي
+  isAdmin: boolean
+  allMerchants: PersistedUser[]
+  adminChangeMerchantPlan: (userId: string, planId: string) => void
+  adminResetMerchantTokens: (userId: string) => void
+  adminToggleMerchantStatus: (userId: string) => void
+  adminImpersonateMerchant: (userId: string) => void
+  adminBroadcastNotification: (title: string, message: string) => void
+  incrementVisitorCount: () => void
 
   setLanguage: (lang: string) => void
   setCurrency: (curr: string) => void
@@ -209,7 +222,7 @@ function demoUser(): PersistedUser {
   const defaultPlan = plans[1] // Growth plan
   return {
     id: "user-demo",
-    name: "مالك المتجر",
+    name: "مالك المتجر (الأدمن)",
     email: DEMO_EMAIL,
     password: DEMO_PASSWORD,
     merchant: {
@@ -223,6 +236,9 @@ function demoUser(): PersistedUser {
       aiTokenLimit: defaultPlan.monthlyTokenLimit,
       currency: "IQD",
       ready: true,
+      totalVisitors: 1420,
+      liveVisitors: 6,
+      status: "active",
       telegramBotToken: "",
       telegramChatId: "",
       address: {
@@ -263,7 +279,6 @@ function loadAll(): PersistedUser[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       const seeded = [demoUser()]
-      // ابدأ مع الديمو مسجل دخوله تلقائياً للمعاينة الأولى
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ users: seeded, sessionId: "user-demo" }))
       return seeded
     }
@@ -324,6 +339,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const current = users.find((u) => u.id === sessionId) ?? null
+  const isAdmin = current?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase()
 
   useEffect(() => {
     const activeTheme = current?.theme ?? theme
@@ -372,6 +388,111 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [])
+
+  // زيادة عداد زوار المتجر
+  const incrementVisitorCount = useCallback(() => {
+    patchCurrent((u) => ({
+      ...u,
+      merchant: {
+        ...u.merchant,
+        totalVisitors: (u.merchant.totalVisitors || 0) + 1,
+      },
+    }))
+  }, [patchCurrent])
+
+  // ==========================================
+  // دوال التحكم للسوبر أدمن (Super Admin)
+  // ==========================================
+  const adminChangeMerchantPlan = useCallback(
+    (userId: string, planId: string) => {
+      const selectedPlan = plans.find((p) => p.id === planId)
+      if (!selectedPlan) return
+      commit(
+        users.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                merchant: {
+                  ...u.merchant,
+                  plan: selectedPlan.name,
+                  activePlanId: selectedPlan.id,
+                  aiTokenLimit: selectedPlan.monthlyTokenLimit,
+                },
+              }
+            : u
+        ),
+        sessionId
+      )
+    },
+    [commit, sessionId, users]
+  )
+
+  const adminResetMerchantTokens = useCallback(
+    (userId: string) => {
+      commit(
+        users.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                merchant: {
+                  ...u.merchant,
+                  aiTokensUsed: 0,
+                },
+              }
+            : u
+        ),
+        sessionId
+      )
+    },
+    [commit, sessionId, users]
+  )
+
+  const adminToggleMerchantStatus = useCallback(
+    (userId: string) => {
+      commit(
+        users.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                merchant: {
+                  ...u.merchant,
+                  status: u.merchant.status === "suspended" ? "active" : "suspended",
+                },
+              }
+            : u
+        ),
+        sessionId
+      )
+    },
+    [commit, sessionId, users]
+  )
+
+  const adminImpersonateMerchant = useCallback(
+    (userId: string) => {
+      commit(users, userId)
+    },
+    [commit, users]
+  )
+
+  const adminBroadcastNotification = useCallback(
+    (title: string, message: string) => {
+      const nextUsers = users.map((u) => {
+        const note: AppNotification = {
+          id: uid("n"),
+          title: `${title}: ${message}`,
+          time: "الآن",
+          read: false,
+          type: "system",
+        }
+        return {
+          ...u,
+          notifications: [note, ...(u.notifications ?? [])].slice(0, 40),
+        }
+      })
+      commit(nextUsers, sessionId)
+    },
+    [commit, sessionId, users]
+  )
 
   const setLanguage = useCallback(
     (lang: string) => {
@@ -434,6 +555,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           aiTokenLimit: defaultPlan.monthlyTokenLimit,
           currency: "IQD",
           ready: false,
+          totalVisitors: 0,
+          liveVisitors: 1,
+          status: "active",
           telegramBotToken: "",
           telegramChatId: "",
           address: emptyAddress(),
@@ -840,6 +964,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setGlobalSearchQuery,
       navigateTo,
 
+      // إمكانيات الأدمن وعداد الزوار
+      isAdmin,
+      allMerchants: users,
+      adminChangeMerchantPlan,
+      adminResetMerchantTokens,
+      adminToggleMerchantStatus,
+      adminImpersonateMerchant,
+      adminBroadcastNotification,
+      incrementVisitorCount,
+
       setLanguage,
       setCurrency,
       setTheme,
@@ -882,6 +1016,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       activeTab,
       globalSearchQuery,
+      isAdmin,
+      users,
+      adminChangeMerchantPlan,
+      adminResetMerchantTokens,
+      adminToggleMerchantStatus,
+      adminImpersonateMerchant,
+      adminBroadcastNotification,
+      incrementVisitorCount,
       setActiveTab,
       setGlobalSearchQuery,
       navigateTo,

@@ -13,8 +13,10 @@ import {
   Store,
   Sparkles,
   Percent,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useApp } from "@/lib/app-state"
 
 const nav = [
   { label: "نظرة عامة", href: "/", icon: LayoutDashboard },
@@ -40,6 +42,7 @@ export function SidebarContent({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { isAdmin } = useApp() // 👈 التحقق من صلاحية الأدمن الرئيسي
 
   const handleUpgrade = () => {
     if (onNavigate) onNavigate()
@@ -98,6 +101,21 @@ export function SidebarContent({
           />
         ))}
 
+        {/* 👈 قسم السوبر أدمن الخص بك فقط */}
+        {isAdmin && (
+          <>
+            <p className="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-wider text-amber-500/90">الإدارة المركزية</p>
+            <NavItem
+              label="لوحة الأدمن"
+              href="/admin"
+              icon={ShieldCheck}
+              active={isLinkActive("/admin")}
+              onNavigate={onNavigate}
+              highlight
+            />
+          </>
+        )}
+
         <p className="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">عام</p>
         {secondary.map((item) => (
           <NavItem
@@ -134,6 +152,7 @@ function NavItem({
   icon: Icon,
   active,
   external,
+  highlight,
   onNavigate,
 }: {
   label: string
@@ -141,13 +160,16 @@ function NavItem({
   icon: React.ComponentType<{ className?: string }>
   active?: boolean
   external?: boolean
+  highlight?: boolean
   onNavigate?: () => void
 }) {
   const className = cn(
     "flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-bold transition-all cursor-pointer",
     active
       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs font-bold"
-      : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      : highlight
+        ? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+        : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
   )
 
   if (external) {
