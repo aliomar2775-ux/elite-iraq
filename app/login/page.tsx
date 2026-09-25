@@ -102,7 +102,7 @@ const steps = [
 const STEP_MS = 3600
 
 export default function LoginPage() {
-  const { login } = useApp()
+  const { login, register } = useApp()
 
   const [activeTab, setActiveTab] = useState<"preview" | "auth">("preview")
   const [authMethod, setAuthMethod] = useState<"email" | "phone" | "google">("email")
@@ -239,7 +239,14 @@ export default function LoginPage() {
           })
         }
 
-        await login("demo@elite.iq", "Elite123")
+        // تسجيل الدخول بحساب زائر عادي وليس أدمن
+        const demoEmail = "sandbox@elite.iq"
+        const demoPass = "Demo12345"
+        let msg = await login(demoEmail, demoPass)
+        if (msg) {
+          await register("مستخدم تجريبي", demoEmail, demoPass, { storeName: "متجر معاينة", phone: formattedPhone })
+          await login(demoEmail, demoPass)
+        }
       } catch (err: any) {
         setError(err.message || "رمز التحقق غير صحيح")
       } finally {
@@ -249,7 +256,7 @@ export default function LoginPage() {
   }
 
   // --------------------------------------------------------------------------
-  // معالجة التسجيل عبر Google (Supabase OAuth) — [تم التعديل والتصحيح]
+  // معالجة التسجيل عبر Google (Supabase OAuth)
   // --------------------------------------------------------------------------
   const handleGoogleLogin = async () => {
     setLoading(true)
@@ -258,7 +265,7 @@ export default function LoginPage() {
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`, // 👈 تم الضبط إلى مسار المعالجة الصحيح
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
       })
       if (googleError) throw googleError
@@ -268,9 +275,22 @@ export default function LoginPage() {
     }
   }
 
+  // 👈 دخول تجريبي آمن ومعزول (بدون صلاحيات الأدمن تماماً)
   const handleQuickDemo = async () => {
     setLoading(true)
-    await login("demo@elite.iq", "Elite123")
+    setError(null)
+    const demoEmail = "sandbox@elite.iq"
+    const demoPass = "Demo12345"
+    
+    let message = await login(demoEmail, demoPass)
+    if (message) {
+      await register("متجر معاينة زائر", demoEmail, demoPass, { storeName: "متجر المعاينة التجريبي", phone: "07700000000" })
+      message = await login(demoEmail, demoPass)
+    }
+    setLoading(false)
+    if (message) {
+      setError(message)
+    }
   }
 
   const inputClass =
@@ -901,7 +921,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={handleQuickDemo}
-                    className="w-full h-10 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-400 transition-all flex items-center justify-center gap-1"
+                    className="w-full h-10 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-400 transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <span>أو دخول مباشر بمتجر تجريبي معزول 🚀</span>
                   </button>
