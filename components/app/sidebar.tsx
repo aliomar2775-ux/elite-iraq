@@ -16,7 +16,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useApp } from "@/lib/app-state"
+import { DEMO_EMAIL, useApp } from "@/lib/app-state"
 
 const nav = [
   { label: "نظرة عامة", href: "/", icon: LayoutDashboard },
@@ -42,7 +42,7 @@ export function SidebarContent({
 }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { isAdmin } = useApp() // 👈 التحقق من صلاحية الأدمن الرئيسي
+  const { user } = useApp() // 👈 جلب بيانات المستخدم الحالي للتحقق من بريده الحصري
 
   const handleUpgrade = () => {
     if (onNavigate) onNavigate()
@@ -57,6 +57,9 @@ export function SidebarContent({
     if (href === "/") return pathname === "/"
     return pathname.startsWith(href)
   }
+
+  // التحقق الحصري من بريد الأدمن
+  const isSuperAdmin = user?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase()
 
   return (
     <div className="flex h-full flex-col rtl text-sidebar-foreground">
@@ -101,8 +104,8 @@ export function SidebarContent({
           />
         ))}
 
-        {/* 👈 قسم السوبر أدمن الخص بك فقط */}
-        {isAdmin && (
+        {/* 👈 يظهر زر الأدمن حصرياً لبريد الأدمن الخاص بك فقط ولا يظهر في الحسابات التجريبية */}
+        {isSuperAdmin && (
           <>
             <p className="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-wider text-amber-500/90">الإدارة المركزية</p>
             <NavItem
