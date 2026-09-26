@@ -163,12 +163,9 @@ type AppState = {
   adminResetMerchantTokens: (userId: string) => void
   adminToggleMerchantStatus: (userId: string) => void
   adminImpersonateMerchant: (userId: string) => void
-  // 👈 معرّف الأدمن الأصلي أثناء تصفّح حساب تاجر بصفته "أدمن متخفّي" — null إن لم يكن هناك انتحال جارٍ
   impersonatorId: string | null
-  // 👈 العودة الفورية لجلسة الأدمن الأصلي دون تسجيل خروج/دخول
   adminReturnToAdmin: () => void
   adminBroadcastNotification: (title: string, message: string) => void
-  // 👈 إشعار موجّه لتاجر واحد فقط (بدل البث لكل التجّار)
   adminSendMerchantNotification: (userId: string, title: string, message: string) => void
   incrementVisitorCount: () => void
 
@@ -177,12 +174,13 @@ type AppState = {
   setTheme: (theme: string) => void
   coupons: Coupon[]
   notificationsInbox: AppNotification[]
-  login: (email: string, password: string) => Promise<string | null>
+  login: (identifier: string, password: string) => Promise<string | null>
   loginWithPhone: (phone: string, otp: string) => Promise<string | null>
   sendLocalOtp: (phone: string) => Promise<string | null>
+  resetPasswordByPhoneOrUsername: (identifier: string, newPass: string) => Promise<string | null>
   register: (name: string, email: string, password: string, extra?: { storeName?: string; phone?: string }) => Promise<string | null>
   logout: () => void
-  deleteAccount: () => void // 👈 ميزة حذف الحساب للمستخدم نفسه
+  deleteAccount: () => void
   completeOnboarding: (input: { storeName: string; slug: string; phone: string; address: Address }) => void
   updateMerchant: (patch: Partial<MerchantProfile>) => void
   upgradePlan: (planId: string) => void
@@ -299,7 +297,6 @@ function loadSessionId(): string | null {
   }
 }
 
-// 👈 استرجاع هوية الأدمن الأصلي إن كان هناك انتحال جارٍ محفوظ من جلسة سابقة
 function loadImpersonatorId(): string | null {
   if (typeof window === "undefined") return null
   try {
@@ -322,7 +319,6 @@ function persist(users: PersistedUser[], sessionId: string | null, impersonatorI
 export function AppProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<PersistedUser[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
-  // 👈 معرّف الأدمن الأصلي أثناء تصفّح متجر تاجر بصفة أدمن؛ null يعني لا يوجد انتحال جارٍ
   const [impersonatorId, setImpersonatorIdState] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
@@ -351,8 +347,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const current = users.find((u) => u.id === sessionId) ?? null
-
-  // 👈 التحقق الصارم من الأدمن عبر بريد متغير البيئة حصرياً
   const isAdmin = current?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase()
 
   useEffect(() => {
@@ -372,8 +366,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     apply(activeTheme)
   }, [current?.theme, theme])
 
-  // 👈 commit أصبح يقبل معامل ثالث اختياري لتحديث impersonatorId معه بنفس عملية الحفظ.
-  // إن لم يُمرَّر، يحافظ على قيمة impersonatorId الحالية كما هي (متوافق مع كل الاستدعاءات القديمة).
   const commit = useCallback(
     (nextUsers: PersistedUser[], nextSession: string | null, nextImpersonatorId?: string | null) => {
       const resolvedImpersonatorId = nextImpersonatorId !== undefined ? nextImpersonatorId : impersonatorId
@@ -484,8 +476,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [isAdmin, commit, sessionId, users]
   )
 
-  // 👈 يحفظ هوية الأدمن الحالي كـ impersonatorId قبل تبديل الجلسة إلى التاجر المستهدف،
-  // بحيث يبقى أثر "من هو الأدمن الذي دخل بصفة هذا التاجر" متاحاً للعودة لاحقاً.
   const adminImpersonateMerchant = useCallback(
     (userId: string) => {
       if (!isAdmin || !current) return
@@ -494,9 +484,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [isAdmin, current, commit, users]
   )
 
-  // 👈 العودة الفورية لجلسة الأدمن الأصلي دون تسجيل خروج/دخول جديد.
-  // تعمل بالاعتماد على impersonatorId المحفوظ، وليس على isAdmin (لأن current أثناء
-  // الانتحال هو التاجر نفسه وليس الأدمن).
   const adminReturnToAdmin = useCallback(() => {
     if (!impersonatorId) return
     const adminStillExists = users.some((u) => u.id === impersonatorId)
@@ -525,8 +512,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [isAdmin, commit, sessionId, users]
   )
 
-  // 👈 إصلاح: إشعار موجّه لتاجر واحد فقط بدل بثّه لكل تجّار المنصة.
-  // يُستخدم في زرّي "إشعار خاص" و"حظر المتجر" بدل adminBroadcastNotification الخاطئة.
   const adminSendMerchantNotification = useCallback(
     (userId: string, title: string, message: string) => {
       if (!isAdmin) return
@@ -577,14 +562,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [patchCurrent]
   )
 
+  // تسجيل الدخول الشامل (بريد، اسم مستخدم، أو رقم هاتف)
   const login = useCallback(
-    async (email: string, password: string) => {
-      const found = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase())
-      if (!found || found.password !== password) return "البريد أو كلمة المرور غير صحيحة"
+    async (identifier: string, password: string) => {
+      const cleanId = identifier.trim().toLowerCase()
+      const found = users.find(
+        (u) =>
+          u.email.toLowerCase() === cleanId ||
+          u.name.toLowerCase() === cleanId ||
+          u.merchant.storeName.toLowerCase() === cleanId ||
+          u.merchant.phone.replace(/\D/g, "") === cleanId.replace(/\D/g, "")
+      )
 
-      // التحقق مما إذا كان الحساب محظوراً
+      if (!found || found.password !== password) {
+        return "معلومات التسجيل غير صحيحة (اسم المستخدم، الهاتف، أو الرمز)"
+      }
+
       if (found.merchant.status === "suspended" && found.email.toLowerCase() !== DEMO_EMAIL.toLowerCase()) {
-        return "تم حظر دخولك إلى المنصة من قبل الإدارة. وشكراً لاستخدامك إيليت العراق."
+        return "تم حظر دخولك إلى المنصة من قبل الإدارة."
       }
 
       commit(users, found.id, null)
@@ -593,10 +588,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [commit, users]
   )
 
+  // استعادة وتغيير الرمز السري عند النسيان
+  const resetPasswordByPhoneOrUsername = useCallback(
+    async (identifier: string, newPass: string) => {
+      const cleanId = identifier.trim().toLowerCase()
+      const targetUser = users.find(
+        (u) =>
+          u.email.toLowerCase() === cleanId ||
+          u.name.toLowerCase() === cleanId ||
+          u.merchant.phone.replace(/\D/g, "") === cleanId.replace(/\D/g, "")
+      )
+
+      if (!targetUser) return "لم يتم العثور على حساب بهذا الاسم أو رقم الهاتف"
+
+      const updatedUsers = users.map((u) => (u.id === targetUser.id ? { ...u, password: newPass } : u))
+      commit(updatedUsers, sessionId, impersonatorId)
+      return null
+    },
+    [commit, users, sessionId, impersonatorId]
+  )
+
   const register = useCallback(
     async (name: string, email: string, password: string, extra?: { storeName?: string; phone?: string }) => {
       const exists = users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())
-      if (exists) return "هذا البريد مسجّل مسبقًا"
+      if (exists) return "هذا الحساب مسجّل مسبقًا"
       const defaultPlan = plans[0]
       const user: PersistedUser = {
         id: uid("user"),
@@ -646,7 +661,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [commit, users]
   )
 
-  // 👈 ميزة حذف الحساب الذاتي من قبل المستخدم نفسه بسهولة
   const deleteAccount = useCallback(() => {
     if (!current) return
     const remainingUsers = users.filter((u) => u.id !== current.id)
@@ -667,7 +681,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const found = users.find((u) => u.email === email || u.merchant.phone.replace(/\D/g, "") === clean)
       if (found) {
         if (found.merchant.status === "suspended") {
-          return "تم حظر دخولك إلى المنصة من قبل الإدارة. وشكراً لاستخدامك إيليت العراق."
+          return "تم حظر دخولك إلى المنصة من قبل الإدارة."
         }
         commit(users, found.id, null)
         return null
@@ -1027,6 +1041,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login,
       loginWithPhone,
       sendLocalOtp,
+      resetPasswordByPhoneOrUsername,
       register,
       logout,
       deleteAccount,
@@ -1084,6 +1099,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login,
       loginWithPhone,
       sendLocalOtp,
+      resetPasswordByPhoneOrUsername,
       register,
       logout,
       deleteAccount,
